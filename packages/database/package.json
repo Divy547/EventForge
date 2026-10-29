@@ -1,0 +1,38 @@
+{
+  "name": "@eventforge/database",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "db:seed": "tsx src/scripts/seed.ts",
+    "db:verify": "tsx src/scripts/verify.ts"
+  },
+  "dependencies": {
+    "@eventforge/common": "workspace:*",
+    "@eventforge/config": "workspace:*",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.39.3",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "@eventforge/typescript-config": "workspace:*",
+    "@types/node": "^22.13.4",
+    "@types/pg": "^8.11.11",
+    "drizzle-kit": "^0.30.5",
+    "tsx": "^4.19.3"
+  }
+}

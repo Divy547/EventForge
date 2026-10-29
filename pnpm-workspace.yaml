@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+onlyBuiltDependencies:
+  - esbuild
+
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true
+  msgpackr-extract: false

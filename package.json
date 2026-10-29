@@ -1,0 +1,46 @@
+{
+  "name": "eventforge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "demo": "node --experimental-strip-types scripts/demo.ts",
+    "dev:api": "pnpm --filter @eventforge/api dev",
+    "start:api": "pnpm --filter @eventforge/api start",
+    "dev:worker": "pnpm --filter @eventforge/worker dev",
+    "start:worker": "pnpm --filter @eventforge/worker start",
+    "lint": "eslint .",
+    "lint:turbo": "turbo run lint",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "db:generate": "pnpm --filter @eventforge/database db:generate",
+    "db:migrate": "pnpm --filter @eventforge/database db:migrate",
+    "db:seed": "pnpm --filter @eventforge/database db:seed",
+    "db:verify": "pnpm --filter @eventforge/database db:verify",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^22.13.4",
+    "eslint": "^9.20.0",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.5.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0"
+  }
+}
