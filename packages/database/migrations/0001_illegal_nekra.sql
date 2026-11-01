@@ -1,0 +1,1 @@
+CREATE INDEX "deliveries_project_status_created_idx" ON "deliveries" USING btree ("project_id","status","created_at");

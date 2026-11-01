@@ -19,6 +19,8 @@ export interface DispatchWebhookInput {
   eventId: string;
   customHeaders?: Record<string, string> | null;
   timeoutMs?: number;
+  traceparent?: string | undefined;
+  tracestate?: string | undefined;
 }
 
 export interface DispatchWebhookResult {
@@ -102,6 +104,13 @@ export class HttpDispatcherService {
       'X-EventForge-Signature': signature,
       'X-EventForge-Timestamp': timestamp.toString(),
     };
+
+    if (input.traceparent) {
+      headers['traceparent'] = input.traceparent;
+    }
+    if (input.tracestate) {
+      headers['tracestate'] = input.tracestate;
+    }
 
     if (input.customHeaders) {
       for (const [key, value] of Object.entries(input.customHeaders)) {

@@ -7,7 +7,7 @@ import {
   type DatabaseConnection,
   outboxRecords,
   sql,
-  eq,
+  inArray,
 } from '@eventforge/database';
 import { defaultMetricsRegistry } from '@eventforge/common';
 import { DATABASE_CONNECTION } from '../database/database.provider.js';
@@ -34,10 +34,25 @@ const outboxFailedGauge = defaultMetricsRegistry.registerGauge(
   'eventforge_outbox_failed_gauge',
   'Number of outbox records currently in FAILED status',
 );
+const outboxDeadLetterGauge = defaultMetricsRegistry.registerGauge(
+  'eventforge_outbox_dead_letter_gauge',
+  'Number of outbox records currently in DEAD_LETTER status',
+);
+
+interface CachedOutboxCounts {
+  pending: number;
+  failed: number;
+  deadLetter: number;
+}
 
 @ApiTags('Health')
 @Controller()
 export class HealthController implements OnModuleInit {
+  private cachedCounts: CachedOutboxCounts = { pending: 0, failed: 0, deadLetter: 0 };
+  private lastFetchTime = 0;
+  private inFlightFetch: Promise<CachedOutboxCounts> | null = null;
+  private readonly CACHE_TTL_MS = 15000;
+
   constructor(
     @Inject(DATABASE_CONNECTION)
     private readonly conn: DatabaseConnection,
@@ -49,28 +64,65 @@ export class HealthController implements OnModuleInit {
     dbPoolWaiting.setCollector(() => this.conn.pool.waitingCount);
 
     outboxPendingGauge.setCollector(async () => {
-      try {
-        const res = await this.conn.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(outboxRecords)
-          .where(eq(outboxRecords.status, 'PENDING'));
-        return res[0]?.count ?? 0;
-      } catch {
-        return 0;
-      }
+      const counts = await this.getCachedOutboxCounts();
+      return counts.pending;
     });
 
     outboxFailedGauge.setCollector(async () => {
-      try {
-        const res = await this.conn.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(outboxRecords)
-          .where(eq(outboxRecords.status, 'FAILED'));
-        return res[0]?.count ?? 0;
-      } catch {
-        return 0;
-      }
+      const counts = await this.getCachedOutboxCounts();
+      return counts.failed;
     });
+
+    outboxDeadLetterGauge.setCollector(async () => {
+      const counts = await this.getCachedOutboxCounts();
+      return counts.deadLetter;
+    });
+  }
+
+  /**
+   * Retrieves aggregated outbox counts using a 15-second TTL cache with single-flight
+   * query coalescing and safe error fallback.
+   */
+  private async getCachedOutboxCounts(): Promise<CachedOutboxCounts> {
+    const now = Date.now();
+    if (now - this.lastFetchTime < this.CACHE_TTL_MS) {
+      return this.cachedCounts;
+    }
+
+    if (this.inFlightFetch) {
+      return this.inFlightFetch;
+    }
+
+    this.inFlightFetch = (async () => {
+      try {
+        const rows = await this.conn.db
+          .select({
+            status: outboxRecords.status,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(outboxRecords)
+          .where(inArray(outboxRecords.status, ['PENDING', 'FAILED', 'DEAD_LETTER']))
+          .groupBy(outboxRecords.status);
+
+        const counts: CachedOutboxCounts = { pending: 0, failed: 0, deadLetter: 0 };
+        for (const row of rows) {
+          if (row.status === 'PENDING') counts.pending = Number(row.count) || 0;
+          else if (row.status === 'FAILED') counts.failed = Number(row.count) || 0;
+          else if (row.status === 'DEAD_LETTER') counts.deadLetter = Number(row.count) || 0;
+        }
+
+        this.cachedCounts = counts;
+        this.lastFetchTime = Date.now();
+        return counts;
+      } catch {
+        // Safe fallback: return last cached counts, never crash scraper
+        return this.cachedCounts;
+      } finally {
+        this.inFlightFetch = null;
+      }
+    })();
+
+    return this.inFlightFetch;
   }
 
   @Public()

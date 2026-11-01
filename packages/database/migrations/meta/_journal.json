@@ -8,6 +8,13 @@
       "when": 1792607245516,
       "tag": "0000_material_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793292819380,
+      "tag": "0001_illegal_nekra",
+      "breakpoints": true
     }
   ]
 }

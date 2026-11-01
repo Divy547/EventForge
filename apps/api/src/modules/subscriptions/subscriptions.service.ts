@@ -75,7 +75,7 @@ export class SubscriptionsService {
       .where(eq(subscriptions.projectId, projectId))
       .orderBy(subscriptions.createdAt);
 
-    return records.map((r) => this.mapToResponseDto(r));
+    return records.map((r: SubscriptionRecord) => this.mapToResponseDto(r));
   }
 
   /**

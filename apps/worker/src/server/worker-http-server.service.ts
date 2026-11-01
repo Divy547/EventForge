@@ -82,6 +82,7 @@ export class WorkerHttpServerService implements OnModuleInit, OnApplicationShutd
 
     // 2. Start lightweight HTTP server for liveness, readiness, and Prometheus scraping
     const port = this.configService.workerPort;
+    const host = this.configService.workerHost;
     if (port <= 0 || (this.configService.nodeEnv === 'test' && !process.env.WORKER_PORT)) {
       this.logger.log('Worker HTTP server disabled (WORKER_PORT <= 0 or test environment)');
       return;
@@ -91,8 +92,8 @@ export class WorkerHttpServerService implements OnModuleInit, OnApplicationShutd
       void this.handleRequest(req, res);
     });
 
-    this.server.listen(port, () => {
-      this.logger.log(`Worker operational HTTP server listening on port ${port}`);
+    this.server.listen(port, host, () => {
+      this.logger.log(`Worker operational HTTP server listening on ${host}:${port}`);
     });
 
     this.server.on('error', (err) => {

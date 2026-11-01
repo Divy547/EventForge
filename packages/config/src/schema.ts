@@ -5,6 +5,7 @@ export const envSchema = z
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
     WORKER_PORT: z.coerce.number().int().nonnegative().default(3001),
+    WORKER_HOST: z.string().default('127.0.0.1'),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
     DATABASE_URL: z
@@ -33,12 +34,26 @@ export const envSchema = z
       .transform((val) => Boolean(val === true || val === 'true' || val === '1')),
   })
   .superRefine((data, ctx) => {
-    if (data.NODE_ENV === 'production' && data.ALLOW_LOCAL_WEBHOOKS) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'ALLOW_LOCAL_WEBHOOKS must never be enabled in production environment',
-        path: ['ALLOW_LOCAL_WEBHOOKS'],
-      });
+    if (data.NODE_ENV === 'production') {
+      if (data.ALLOW_LOCAL_WEBHOOKS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ALLOW_LOCAL_WEBHOOKS must never be enabled in production environment',
+          path: ['ALLOW_LOCAL_WEBHOOKS'],
+        });
+      }
+
+      if (
+        data.DATABASE_URL.includes('://postgres:postgres@') ||
+        data.DATABASE_URL.includes('://postgres:@')
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'DATABASE_URL must not use default or empty development credentials in production environment',
+          path: ['DATABASE_URL'],
+        });
+      }
     }
   });
 

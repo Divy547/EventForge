@@ -36,6 +36,11 @@ export const deliveries = pgTable(
     uniqueIndex('deliveries_event_subscription_idx').on(table.eventId, table.subscriptionId),
     index('deliveries_status_retry_idx').on(table.status, table.nextRetryAt),
     index('deliveries_project_created_idx').on(table.projectId, table.createdAt),
+    index('deliveries_project_status_created_idx').on(
+      table.projectId,
+      table.status,
+      table.createdAt,
+    ),
   ],
 );
 

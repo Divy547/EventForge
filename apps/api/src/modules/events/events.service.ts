@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   type Database,
+  type EventRecord,
   events,
   insertEventWithOutbox,
   sql,
@@ -48,7 +49,11 @@ export class EventsService {
   /**
    * Durably ingests an event and creates its transactional outbox record atomically.
    */
-  async ingestEvent(projectId: string, dto: IngestEventDto): Promise<IngestEventResponseDto> {
+  async ingestEvent(
+    projectId: string,
+    dto: IngestEventDto,
+    traceContext?: { traceparent?: string | undefined; tracestate?: string | undefined },
+  ): Promise<IngestEventResponseDto> {
     const payloadStr = JSON.stringify(dto.payload);
     if (Buffer.byteLength(payloadStr, 'utf8') > MAX_PAYLOAD_BYTES) {
       eventsRejectedTotal.inc({ reason: 'payload_too_large' });
@@ -57,12 +62,22 @@ export class EventsService {
       );
     }
 
+    const metadata: Record<string, unknown> = {
+      ...(dto.metadata || {}),
+    };
+    if (traceContext?.traceparent && !metadata.traceparent) {
+      metadata.traceparent = traceContext.traceparent;
+    }
+    if (traceContext?.tracestate && !metadata.tracestate) {
+      metadata.tracestate = traceContext.tracestate;
+    }
+
     const result = await insertEventWithOutbox(this.db, {
       projectId,
       eventType: dto.eventType,
       source: dto.source,
       payload: dto.payload,
-      metadata: dto.metadata || {},
+      metadata,
       idempotencyKey: dto.idempotencyKey || null,
     });
 
@@ -162,7 +177,7 @@ export class EventsService {
       .limit(query.limit)
       .offset(offset);
 
-    const data: EventDetailResponseDto[] = records.map((e) => ({
+    const data: EventDetailResponseDto[] = records.map((e: EventRecord) => ({
       id: e.id,
       projectId: e.projectId,
       idempotencyKey: e.idempotencyKey,

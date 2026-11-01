@@ -5,6 +5,7 @@ import {
   WEBHOOK_DELIVERY_QUEUE,
   calculateExponentialBackoff,
   defaultMetricsRegistry,
+  createChildTraceparent,
 } from '@eventforge/common';
 import { WorkerDatabaseService } from '../database/worker-database.service.js';
 import { DELIVERY_QUEUE, REDIS_CLIENT } from '../redis/redis.provider.js';
@@ -13,6 +14,8 @@ import { HttpDispatcherService, WebhookDispatchError } from './http-dispatcher.s
 
 export interface WebhookJobData {
   deliveryId: string;
+  traceparent?: string | undefined;
+  tracestate?: string | undefined;
 }
 
 const inFlightDeliveriesGauge = defaultMetricsRegistry.registerGauge(
@@ -72,7 +75,10 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
     this.worker = new Worker<WebhookJobData>(
       WEBHOOK_DELIVERY_QUEUE,
       async (job: Job<WebhookJobData>) => {
-        await this.processDelivery(job.data.deliveryId);
+        await this.processDelivery(job.data.deliveryId, {
+          traceparent: job.data.traceparent,
+          tracestate: job.data.tracestate,
+        });
       },
       {
         connection: this.redisClient,
@@ -101,7 +107,10 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
    * Processes a single delivery job: claims delivery, constructs signed payload,
    * dispatches HTTP call, handles retry / dead-lettering, and records attempt history.
    */
-  async processDelivery(deliveryId: string): Promise<void> {
+  async processDelivery(
+    deliveryId: string,
+    traceContext?: { traceparent?: string | undefined; tracestate?: string | undefined },
+  ): Promise<void> {
     // 1. Atomically claim delivery in DB (moves status to IN_FLIGHT, enforcing backoff and max attempts)
     const claimedDelivery = await this.dbService.claimDeliveryForProcessing(deliveryId, {
       leaseTimeoutSeconds: this.configService.deliveryLeaseTimeoutSeconds,
@@ -160,6 +169,24 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
         attemptNumber,
       });
 
+      // Derive trace context: from job data or event metadata
+      const parentTraceparent =
+        traceContext?.traceparent ||
+        (typeof event.metadata === 'object' &&
+        event.metadata !== null &&
+        'traceparent' in event.metadata
+          ? String((event.metadata as Record<string, unknown>).traceparent)
+          : undefined);
+      const tracestate =
+        traceContext?.tracestate ||
+        (typeof event.metadata === 'object' &&
+        event.metadata !== null &&
+        'tracestate' in event.metadata
+          ? String((event.metadata as Record<string, unknown>).tracestate)
+          : undefined);
+
+      const outboundTraceparent = createChildTraceparent(parentTraceparent);
+
       // 5. Dispatch webhook
       try {
         const response = await this.httpDispatcher.dispatch({
@@ -169,6 +196,8 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
           deliveryId: claimedDelivery.id,
           eventId: event.id,
           customHeaders: subscription.headers,
+          traceparent: outboundTraceparent,
+          tracestate,
         });
 
         // 6. Success: record COMPLETED status, increment attempt count, and save attempt history

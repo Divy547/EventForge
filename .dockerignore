@@ -1,0 +1,22 @@
+# Dependency & Build Artifacts
+node_modules
+dist
+.turbo
+coverage
+*.log
+
+# Git & IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Environment files with sensitive credentials
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Documentation & Local Scripts (not needed in container images)
+docs
+scripts

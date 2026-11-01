@@ -348,7 +348,7 @@ export async function findDueDeliveriesForRecovery(
     .from(deliveries)
     .where(
       and(
-        eq(deliveries.status, 'FAILED'),
+        or(eq(deliveries.status, 'FAILED'), eq(deliveries.status, 'PENDING')),
         sql`${deliveries.attemptsCount} < ${deliveries.maxAttempts}`,
         or(isNull(deliveries.nextRetryAt), sql`${deliveries.nextRetryAt} <= NOW()`),
         sql`${deliveries.updatedAt} < NOW() - (${graceSeconds} * INTERVAL '1 second')`,
@@ -405,4 +405,186 @@ export async function findStaleDeliveries(
       ),
     )
     .limit(limit);
+}
+
+export interface ReplayDeliveryResult {
+  delivery: DeliveryRecord;
+  targetAttempt: number;
+}
+
+export interface ReplayItemResult {
+  deliveryId: string;
+  success: boolean;
+  delivery?: DeliveryRecord;
+  targetAttempt?: number;
+  error?: string;
+  statusCode?: number;
+}
+
+export interface BatchReplayResult {
+  totalRequested: number;
+  replayedCount: number;
+  failedCount: number;
+  items: ReplayItemResult[];
+}
+
+export interface BatchReplayOptions {
+  deliveryIds?: string[] | undefined;
+  subscriptionId?: string | undefined;
+  additionalAttempts?: number | undefined;
+  limit?: number | undefined;
+}
+
+/**
+ * Atomically transitions a DEAD_LETTER delivery to PENDING and adds additional attempt headroom.
+ * Preserves attemptsCount and existing attempt history.
+ * Enforces tenant ownership checks and concurrency protection.
+ */
+export async function replayDeadLetterDelivery(
+  db: Database,
+  projectId: string,
+  deliveryId: string,
+  additionalAttempts = 3,
+): Promise<ReplayDeliveryResult | null> {
+  const clampedAdditional = Math.min(Math.max(additionalAttempts, 1), 10);
+
+  return await db.transaction(async (tx) => {
+    // 1. Fetch current delivery with project scoping and row lock
+    const [existing] = await tx
+      .select()
+      .from(deliveries)
+      .where(and(eq(deliveries.id, deliveryId), eq(deliveries.projectId, projectId)))
+      .for('update')
+      .limit(1);
+
+    if (!existing) {
+      return null;
+    }
+
+    if (existing.status !== 'DEAD_LETTER') {
+      throw new Error(
+        `Delivery ${deliveryId} is in status '${existing.status}'; only 'DEAD_LETTER' deliveries can be replayed`,
+      );
+    }
+
+    // 2. Atomically transition to PENDING with increased maxAttempts
+    const newMaxAttempts = existing.attemptsCount + clampedAdditional;
+
+    const [updated] = await tx
+      .update(deliveries)
+      .set({
+        status: 'PENDING',
+        maxAttempts: newMaxAttempts,
+        nextRetryAt: null,
+        completedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(deliveries.id, deliveryId),
+          eq(deliveries.projectId, projectId),
+          eq(deliveries.status, 'DEAD_LETTER'),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      throw new Error(`Delivery ${deliveryId} was already replayed concurrently`);
+    }
+
+    const targetAttempt = updated.attemptsCount + 1;
+
+    return {
+      delivery: updated,
+      targetAttempt,
+    };
+  });
+}
+
+/**
+ * Replays multiple DEAD_LETTER deliveries for a project, handling partially eligible batches
+ * and returning per-item execution status.
+ */
+export async function batchReplayDeadLetterDeliveries(
+  db: Database,
+  projectId: string,
+  options: BatchReplayOptions,
+): Promise<BatchReplayResult> {
+  const maxLimit = Math.min(Math.max(options.limit ?? 50, 1), 50);
+  const additional = Math.min(Math.max(options.additionalAttempts ?? 3, 1), 10);
+
+  const results: ReplayItemResult[] = [];
+
+  if (options.deliveryIds && options.deliveryIds.length > 0) {
+    const requestedIds = options.deliveryIds.slice(0, maxLimit);
+    for (const id of requestedIds) {
+      try {
+        const replayRes = await replayDeadLetterDelivery(db, projectId, id, additional);
+        if (!replayRes) {
+          results.push({
+            deliveryId: id,
+            success: false,
+            statusCode: 404,
+            error: 'Delivery not found',
+          });
+        } else {
+          results.push({
+            deliveryId: id,
+            success: true,
+            delivery: replayRes.delivery,
+            targetAttempt: replayRes.targetAttempt,
+          });
+        }
+      } catch (err) {
+        results.push({
+          deliveryId: id,
+          success: false,
+          statusCode: 409,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  } else {
+    const conditions = [eq(deliveries.projectId, projectId), eq(deliveries.status, 'DEAD_LETTER')];
+    if (options.subscriptionId) {
+      conditions.push(eq(deliveries.subscriptionId, options.subscriptionId));
+    }
+
+    const candidateDeliveries = await db
+      .select({ id: deliveries.id })
+      .from(deliveries)
+      .where(and(...conditions))
+      .limit(maxLimit);
+
+    for (const candidate of candidateDeliveries) {
+      try {
+        const replayRes = await replayDeadLetterDelivery(db, projectId, candidate.id, additional);
+        if (replayRes) {
+          results.push({
+            deliveryId: candidate.id,
+            success: true,
+            delivery: replayRes.delivery,
+            targetAttempt: replayRes.targetAttempt,
+          });
+        }
+      } catch (err) {
+        results.push({
+          deliveryId: candidate.id,
+          success: false,
+          statusCode: 409,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  const replayedCount = results.filter((r) => r.success).length;
+  const failedCount = results.filter((r) => !r.success).length;
+
+  return {
+    totalRequested: results.length,
+    replayedCount,
+    failedCount,
+    items: results,
+  };
 }

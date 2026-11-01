@@ -134,14 +134,17 @@ describe('DeliveryProcessor', () => {
 
     await processor.processDelivery('del-1');
 
-    expect(mockDispatcher.dispatch).toHaveBeenCalledWith({
-      targetUrl: 'https://example.com/webhook',
-      payloadString: expect.stringContaining('"event":"order.created"'),
-      signingSecret: 'whsec_secret',
-      deliveryId: 'del-1',
-      eventId: 'evt-1',
-      customHeaders: { 'X-Custom-Auth': 'Bearer token' },
-    });
+    expect(mockDispatcher.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetUrl: 'https://example.com/webhook',
+        payloadString: expect.stringContaining('"event":"order.created"'),
+        signingSecret: 'whsec_secret',
+        deliveryId: 'del-1',
+        eventId: 'evt-1',
+        customHeaders: { 'X-Custom-Auth': 'Bearer token' },
+        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/),
+      }),
+    );
 
     expect(mockDbService.recordSuccessfulDelivery).toHaveBeenCalledWith({
       deliveryId: 'del-1',

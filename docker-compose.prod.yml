@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventforge-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_prod_password}
+      POSTGRES_DB: ${POSTGRES_DB:-eventforge}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-eventforge}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - eventforge-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventforge-prod-redis
+    restart: unless-stopped
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+    networks:
+      - eventforge-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: eventforge-api:latest
+    container_name: eventforge-prod-api
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_prod_password}@postgres:5432/${POSTGRES_DB:-eventforge}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-20}
+      REDIS_URL: redis://redis:6379
+      ALLOW_LOCAL_WEBHOOKS: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventforge-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: eventforge-worker:latest
+    container_name: eventforge-prod-worker
+    restart: unless-stopped
+    ports:
+      - '${WORKER_PORT:-3001}:3001'
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: 3001
+      WORKER_HOST: '0.0.0.0'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_prod_password}@postgres:5432/${POSTGRES_DB:-eventforge}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-20}
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+      WEBHOOK_TIMEOUT_MS: ${WEBHOOK_TIMEOUT_MS:-10000}
+      WEBHOOK_MAX_RETRIES: ${WEBHOOK_MAX_RETRIES:-5}
+      DELIVERY_LEASE_TIMEOUT_MS: ${DELIVERY_LEASE_TIMEOUT_MS:-60000}
+      STALE_RECOVERY_INTERVAL_MS: ${STALE_RECOVERY_INTERVAL_MS:-30000}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-50}
+      ALLOW_LOCAL_WEBHOOKS: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventforge-net
+
+volumes:
+  postgres_prod_data:
+    name: eventforge_prod_postgres_data
+  redis_prod_data:
+    name: eventforge_prod_redis_data
+
+networks:
+  eventforge-net:
+    name: eventforge_prod_net

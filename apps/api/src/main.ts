@@ -69,8 +69,8 @@ async function bootstrap(): Promise<void> {
   });
 
   // 6. Start HTTP server
-  await app.listen(env.PORT);
-  logger.log(`EventForge API server running on http://localhost:${env.PORT}`);
+  await app.listen(env.PORT, '0.0.0.0');
+  logger.log(`EventForge API server running on port ${env.PORT}`);
   logger.log(`OpenAPI documentation available at http://localhost:${env.PORT}/docs`);
 }
 

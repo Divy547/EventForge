@@ -23,6 +23,7 @@ const config = {
     '^@eventforge/database$': '<rootDir>/../../packages/database/dist/index.js',
   },
   testEnvironment: 'node',
+  testTimeout: 30000,
 };
 
 export default config;

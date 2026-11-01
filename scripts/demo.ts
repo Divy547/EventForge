@@ -2,10 +2,12 @@ import http from 'node:http';
 import { createServer, type Server } from 'node:http';
 import type { ChildProcess } from 'node:child_process';
 import { generateApiKey, verifyWebhookSignature } from '../packages/common/dist/index.js';
+import { EventForgeWebhook } from '../packages/sdk/dist/index.js';
 import {
   getDatabaseConnection,
   closeDatabasePool,
   projects,
+  events,
   apiKeys,
   deliveries,
   deliveryAttempts,
@@ -362,6 +364,20 @@ async function main(): Promise<void> {
     throw new Error('HMAC-SHA256 signature verification failed!');
   }
 
+  // Verify W3C Distributed Tracing header
+  const receivedTraceparent = received.headers['traceparent'] as string;
+  console.log(`      ✓ W3C Traceparent Header: ${receivedTraceparent}`);
+  if (!receivedTraceparent || !receivedTraceparent.startsWith('00-')) {
+    throw new Error('Missing or invalid W3C traceparent header on received webhook!');
+  }
+
+  // Verify and construct envelope using @eventforge/sdk
+  const sdkWebhook = new EventForgeWebhook();
+  const sdkEvent = sdkWebhook.constructEvent(received.rawBody, received.headers, signingSecret);
+  console.log(
+    `      ✓ Verified & Parsed with @eventforge/sdk: Event ID ${sdkEvent.id}, Type: ${sdkEvent.event}`,
+  );
+
   // Verify delivery state in database
   const deliveryId = received.headers['x-eventforge-delivery-id'] as string;
   const deliveryRows = await db.select().from(deliveries).where(eq(deliveries.id, deliveryId));
@@ -427,6 +443,56 @@ async function main(): Promise<void> {
   const finalRetryDelivery = retryDeliveryRows[0];
   console.log(
     `      ✓ Final Delivery Status: ${finalRetryDelivery?.status} (Total Attempts: ${finalRetryDelivery?.attemptsCount})\n`,
+  );
+
+  // 7c. Demonstrate DLQ Inspection and Replay
+  console.log('[7c] Demonstrating DLQ Inspection & Replay API...');
+  const [dlqEvent] = await db
+    .insert(events)
+    .values({
+      projectId: project.id,
+      eventType: 'order.cancelled',
+      source: 'demo.dlq',
+      payload: { reason: 'payment_failed' },
+      idempotencyKey: `dlq-demo-${Date.now()}`,
+    })
+    .returning();
+
+  const [dlqDelivery] = await db
+    .insert(deliveries)
+    .values({
+      projectId: project.id,
+      eventId: dlqEvent!.id,
+      subscriptionId: subscriptionId,
+      status: 'DEAD_LETTER',
+      attemptsCount: 5,
+      maxAttempts: 5,
+    })
+    .returning();
+
+  const dlqListRes = await httpRequest(`${API_URL}/v1/deliveries?status=DEAD_LETTER`, {
+    headers: { 'X-API-Key': rawKey },
+  });
+  console.log(
+    `      ✓ DLQ Query: retrieved ${(dlqListRes.json as { data?: unknown[] }).data?.length} DEAD_LETTER delivery(ies)`,
+  );
+
+  const replayRes = await httpRequest(`${API_URL}/v1/deliveries/${dlqDelivery!.id}/replay`, {
+    method: 'POST',
+    headers: { 'X-API-Key': rawKey },
+    body: { additionalAttempts: 3 },
+  });
+
+  if (replayRes.status !== 200) {
+    throw new Error(`Failed to replay dead letter: ${replayRes.status} ${replayRes.body}`);
+  }
+  const replayedData = (
+    replayRes.json as {
+      delivery: { id: string; status: string; attemptsCount: number; maxAttempts: number };
+    }
+  ).delivery;
+  console.log(
+    `      ✓ Replay Executed: ${replayedData.id} reset to ${replayedData.status} (Attempts: ${replayedData.attemptsCount}, Max: ${replayedData.maxAttempts})\n`,
   );
 
   // 8. Prometheus Metrics Inspection

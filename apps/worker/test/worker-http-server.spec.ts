@@ -11,6 +11,7 @@ describe('WorkerHttpServerService (Operational HTTP Server)', () => {
   beforeAll(() => {
     const mockConfigService = {
       workerPort: testPort,
+      workerHost: '127.0.0.1',
     } as unknown as WorkerConfigService;
 
     const mockDbService = {
@@ -122,5 +123,10 @@ describe('WorkerHttpServerService (Operational HTTP Server)', () => {
   it('GET /unknown should return 404', async () => {
     const res = await makeRequest('/unknown');
     expect(res.status).toBe(404);
+  });
+
+  it('should be reachable on configured 127.0.0.1 workerHost', async () => {
+    const res = await makeRequest('/health');
+    expect(res.status).toBe(200);
   });
 });

@@ -30,6 +30,7 @@ export const OutboxStatus = {
   PROCESSING: 'PROCESSING',
   PROCESSED: 'PROCESSED',
   FAILED: 'FAILED',
+  DEAD_LETTER: 'DEAD_LETTER',
 } as const;
 
 export type OutboxStatus = (typeof OutboxStatus)[keyof typeof OutboxStatus];

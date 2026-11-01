@@ -49,6 +49,10 @@ export class WorkerConfigService {
     return this.config.WORKER_PORT;
   }
 
+  get workerHost(): string {
+    return this.config.WORKER_HOST;
+  }
+
   get webhookTimeoutMs(): number {
     return this.config.WEBHOOK_TIMEOUT_MS;
   }

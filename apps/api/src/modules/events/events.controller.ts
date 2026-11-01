@@ -5,10 +5,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiParam } from '@nestjs/swagger';
 import { EventsService } from './events.service.js';
 import { IngestEventDto } from './dto/ingest-event.dto.js';
@@ -45,8 +47,12 @@ export class EventsController {
   async ingestEvent(
     @CurrentProject() project: AuthenticatedProject,
     @Body() dto: IngestEventDto,
+    @Req() req: Request,
   ): Promise<IngestEventResponseDto> {
-    return this.eventsService.ingestEvent(project.id, dto);
+    return this.eventsService.ingestEvent(project.id, dto, {
+      traceparent: req.traceparent,
+      tracestate: req.tracestate,
+    });
   }
 
   @Get(':id')

@@ -78,7 +78,7 @@ describe('Milestone 4 Reliability Remediation Integration Tests', () => {
       .returning();
 
     testProjectId = project!.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
     if (testProjectId && db) {
@@ -94,7 +94,7 @@ describe('Milestone 4 Reliability Remediation Integration Tests', () => {
     if (moduleRef) {
       await moduleRef.close();
     }
-  });
+  }, 30000);
 
   it('enforces backoff: future next_retry_at prevents claim, but becomes claimable once due', async () => {
     const [sub] = await db

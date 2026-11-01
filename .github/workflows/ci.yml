@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-and-tests:
+    name: Code Quality & Automated Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eventforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eventforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 5s
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 3s
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/eventforge
+      REDIS_URL: redis://localhost:6379
+      WORKER_PORT: 3001
+      WORKER_HOST: 127.0.0.1
+      ALLOW_LOCAL_WEBHOOKS: true
+      CI: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm package manager
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+          run_install: false
+
+      - name: Set up Node.js 24 runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies with frozen lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Run code formatting check (Prettier)
+        run: pnpm format:check
+
+      - name: Run static analysis & linting (ESLint)
+        run: pnpm lint
+
+      - name: Run TypeScript typecheck across monorepo
+        run: pnpm typecheck
+
+      - name: Build applications and packages
+        run: pnpm build
+
+      - name: Apply PostgreSQL migrations
+        run: pnpm db:migrate
+
+      - name: Execute unit test suites
+        run: pnpm run test:unit
+
+      - name: Execute integration test suites against PostgreSQL and Redis
+        run: pnpm run test:integration
+
+      - name: Execute full test suite
+        run: pnpm test
+
+      - name: Run end-to-end integration demo
+        env:
+          NODE_ENV: development
+          ALLOW_LOCAL_WEBHOOKS: true
+        run: pnpm demo
+
+  docker-build:
+    name: Docker Multi-Stage Build Validation
+    needs: quality-and-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate API Docker image build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: eventforge-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate Worker Docker image build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: false
+          tags: eventforge-worker:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

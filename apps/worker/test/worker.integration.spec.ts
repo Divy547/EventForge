@@ -101,7 +101,7 @@ describe('Worker End-to-End Integration Tests', () => {
       .returning();
 
     testProjectId = project!.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
     // Clean up test data (cascade deletes all events, subscriptions, deliveries, attempts)
@@ -118,7 +118,7 @@ describe('Worker End-to-End Integration Tests', () => {
     if (moduleRef) {
       await moduleRef.close();
     }
-  });
+  }, 30000);
 
   it('claims outbox record, fans out to active subscription, and delivers signed payload', async () => {
     mockResponseStatus = 200;

@@ -15,6 +15,8 @@ import {
   claimPendingOutboxRecords,
   completeOutboxRecord,
   failOutboxRecord,
+  recordFailedOutboxAttempt,
+  type FailedOutboxResult,
   createDeliveriesForEvent,
   getDeliveryContext,
   claimDeliveryForProcessing,
@@ -58,6 +60,14 @@ export class WorkerDatabaseService {
 
   async failOutboxRecord(outboxId: string, errorMessage: string): Promise<void> {
     return failOutboxRecord(this.db, outboxId, errorMessage);
+  }
+
+  async recordFailedOutboxAttempt(
+    outboxId: string,
+    errorMessage: string,
+    maxAttempts = 10,
+  ): Promise<FailedOutboxResult> {
+    return recordFailedOutboxAttempt(this.db, outboxId, errorMessage, maxAttempts);
   }
 
   async getEvent(eventId: string): Promise<EventRecord | null> {

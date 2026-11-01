@@ -12,6 +12,8 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "demo": "node --experimental-strip-types scripts/demo.ts",
+    "load-test": "node --experimental-strip-types scripts/load-test.ts",
+    "smoke-test": "node --experimental-strip-types scripts/smoke-test.ts",
     "dev:api": "pnpm --filter @eventforge/api dev",
     "start:api": "pnpm --filter @eventforge/api start",
     "dev:worker": "pnpm --filter @eventforge/worker dev",
@@ -27,11 +29,15 @@
     "format:write": "prettier --write .",
     "db:generate": "pnpm --filter @eventforge/database db:generate",
     "db:migrate": "pnpm --filter @eventforge/database db:migrate",
+    "db:migrate:prod": "pnpm --filter @eventforge/database db:migrate:prod",
     "db:seed": "pnpm --filter @eventforge/database db:seed",
     "db:verify": "pnpm --filter @eventforge/database db:verify",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "docker:prod:up": "docker compose -f docker-compose.prod.yml up -d --build",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",

@@ -27,6 +27,9 @@ describe('OutboxPollerService', () => {
       createDeliveriesForEvent: jest.fn<any>(),
       completeOutboxRecord: jest.fn<any>(),
       failOutboxRecord: jest.fn<any>(),
+      recordFailedOutboxAttempt: jest
+        .fn<any>()
+        .mockResolvedValue({ id: 'outbox-1', status: 'FAILED', attempts: 1 }),
     };
 
     poller = new OutboxPollerService(
@@ -162,12 +165,12 @@ describe('OutboxPollerService', () => {
     expect(mockQueue.add).toHaveBeenCalledTimes(2);
     expect(mockQueue.add).toHaveBeenCalledWith(
       'deliver',
-      { deliveryId: 'del-1' },
+      { deliveryId: 'del-1', traceparent: undefined, tracestate: undefined },
       { jobId: 'delivery-del-1-1' },
     );
     expect(mockQueue.add).toHaveBeenCalledWith(
       'deliver',
-      { deliveryId: 'del-3' },
+      { deliveryId: 'del-3', traceparent: undefined, tracestate: undefined },
       { jobId: 'delivery-del-3-1' },
     );
 
@@ -191,15 +194,47 @@ describe('OutboxPollerService', () => {
 
     mockDbService.claimPendingOutboxRecords!.mockResolvedValue([fakeOutboxRecord]);
     mockDbService.getEvent!.mockResolvedValue(null);
-    mockDbService.failOutboxRecord!.mockResolvedValue(undefined);
 
     const count = await poller.pollOnce();
 
     expect(count).toBe(1);
-    expect(mockDbService.failOutboxRecord).toHaveBeenCalledWith(
+    expect(mockDbService.recordFailedOutboxAttempt).toHaveBeenCalledWith(
       'outbox-missing',
       expect.stringContaining('Event evt-nonexistent not found'),
+      10,
     );
     expect(mockQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('transitions outbox record to DEAD_LETTER when maximum retry attempts are exhausted', async () => {
+    const exhaustedRecord = {
+      id: 'outbox-exhausted',
+      eventId: 'evt-exhausted',
+      status: 'PROCESSING' as const,
+      attempts: 10,
+      claimedBy: 'worker-1',
+      claimedAt: new Date(),
+      processedAt: null,
+      error: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockDbService.claimPendingOutboxRecords!.mockResolvedValue([exhaustedRecord]);
+    mockDbService.getEvent!.mockRejectedValue(new Error('Fatal database disk failure'));
+    mockDbService.recordFailedOutboxAttempt!.mockResolvedValue({
+      id: 'outbox-exhausted',
+      status: 'DEAD_LETTER',
+      attempts: 10,
+    });
+
+    const count = await poller.pollOnce();
+
+    expect(count).toBe(1);
+    expect(mockDbService.recordFailedOutboxAttempt).toHaveBeenCalledWith(
+      'outbox-exhausted',
+      'Fatal database disk failure',
+      10,
+    );
   });
 });

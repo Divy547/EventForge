@@ -1,10 +1,16 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
-import { matchesEventType } from '@eventforge/common';
+import { matchesEventType, defaultMetricsRegistry } from '@eventforge/common';
 import { WorkerDatabaseService } from '../database/worker-database.service.js';
 import { DELIVERY_QUEUE } from '../redis/redis.provider.js';
 import { WorkerConfigService } from '../config/worker-config.service.js';
+
+const outboxDeadLetterTotal = defaultMetricsRegistry.registerCounter(
+  'eventforge_outbox_dead_letter_total',
+  'Total number of outbox records permanently moved to DEAD_LETTER',
+  ['reason'],
+);
 
 @Injectable()
 export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown {
@@ -93,7 +99,16 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
             error: errMsg,
             stack: error instanceof Error ? error.stack : undefined,
           });
-          await this.dbService.failOutboxRecord(record.id, errMsg);
+          const result = await this.dbService.recordFailedOutboxAttempt(record.id, errMsg, 10);
+          if (result.status === 'DEAD_LETTER') {
+            outboxDeadLetterTotal.inc({ reason: 'max_attempts_exceeded' });
+            this.logger.error({
+              message: `Outbox record ${record.id} permanently transitioned to DEAD_LETTER after ${result.attempts} attempts`,
+              recordId: record.id,
+              eventId: record.eventId,
+              attempts: result.attempts,
+            });
+          }
         }
       }
 
@@ -113,7 +128,14 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
     const event = await this.dbService.getEvent(eventId);
 
     if (!event) {
-      await this.dbService.failOutboxRecord(outboxId, `Event ${eventId} not found`);
+      const result = await this.dbService.recordFailedOutboxAttempt(
+        outboxId,
+        `Event ${eventId} not found`,
+        10,
+      );
+      if (result.status === 'DEAD_LETTER') {
+        outboxDeadLetterTotal.inc({ reason: 'event_not_found' });
+      }
       return;
     }
 
@@ -122,8 +144,8 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
 
     // 3. Match subscriptions based on event type patterns
     const matchingSubs = activeSubscriptions.filter((sub) => {
-      const patterns = Array.isArray(sub.eventTypes) ? sub.eventTypes : [];
-      return patterns.some((pattern) => matchesEventType(pattern, event.eventType));
+      const patterns = Array.isArray(sub.eventTypes) ? (sub.eventTypes as string[]) : [];
+      return patterns.some((pattern: string) => matchesEventType(pattern, event.eventType));
     });
 
     if (matchingSubs.length > 0) {
@@ -135,10 +157,29 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
       });
 
       // 5. Enqueue BullMQ jobs for each delivery outside of DB transactions
+      const traceContext = {
+        traceparent:
+          typeof event.metadata === 'object' &&
+          event.metadata !== null &&
+          'traceparent' in event.metadata
+            ? String((event.metadata as Record<string, unknown>).traceparent)
+            : undefined,
+        tracestate:
+          typeof event.metadata === 'object' &&
+          event.metadata !== null &&
+          'tracestate' in event.metadata
+            ? String((event.metadata as Record<string, unknown>).tracestate)
+            : undefined,
+      };
+
       for (const delivery of deliveryRecords) {
         await this.deliveryQueue.add(
           'deliver',
-          { deliveryId: delivery.id },
+          {
+            deliveryId: delivery.id,
+            traceparent: traceContext.traceparent,
+            tracestate: traceContext.tracestate,
+          },
           {
             jobId: `delivery-${delivery.id}-${delivery.attemptsCount + 1}`,
           },
