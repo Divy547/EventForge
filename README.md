@@ -320,9 +320,3 @@ LOAD_TEST_REQUESTS=500 LOAD_TEST_CONCURRENCY=50 pnpm load-test
 ```
 
 ---
-
-## Documentation Links
-
-- **Architecture & Delivery Semantics**: [`docs/architecture.md`](docs/architecture.md)
-- **Production Deployment & Runbook**: [`docs/deployment.md`](docs/deployment.md)
-- **Metrics, Logging & Observability**: [`docs/observability.md`](docs/observability.md)
