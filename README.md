@@ -320,3 +320,10 @@ LOAD_TEST_REQUESTS=500 LOAD_TEST_CONCURRENCY=50 pnpm load-test
 ```
 
 ---
+
+## Documentation
+
+- **[What is EventForge? (Plain English Guide)](docs/README.md)**: Conceptual, non-technical explanation of the problem EventForge solves.
+- **[Architecture & Delivery Semantics](docs/architecture.md)**: Deep dive into the transactional outbox, state machines, and retry algorithms.
+- **[Production Deployment & Operations](docs/deployment.md)**: Container architecture, migrations, backup/restore, and scaling runbook.
+- **[Metrics, Logging & Observability](docs/observability.md)**: Complete metrics catalog, alert thresholds, and logging schemas.
