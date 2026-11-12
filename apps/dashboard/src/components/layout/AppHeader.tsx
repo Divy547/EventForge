@@ -18,11 +18,11 @@ const NAV = [
 
 const SANDBOX_NAV = { to: '/sandbox', label: 'Sandbox', end: false };
 
-/** Dark navy chrome shared by every signed-in page. */
+/** Page chrome (white in light mode, black in dark) shared by every signed-in page. */
 export function AppHeader({ onSignOut }: AppHeaderProps) {
   const nav = isSandboxSession() ? [...NAV, SANDBOX_NAV] : NAV;
   return (
-    <header className="bg-navy text-navy-foreground">
+    <header className="border-b border-border bg-navy text-navy-foreground">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-6">
           <span className="font-heading text-lg font-semibold">EventForge</span>
@@ -34,8 +34,10 @@ export function AppHeader({ onSignOut }: AppHeaderProps) {
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'inline-flex h-11 items-center rounded-md px-3 text-sm font-medium outline-none hover:bg-white/10 focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    isActive ? 'bg-white/10 text-white' : 'text-navy-foreground/80',
+                    'inline-flex h-11 items-center rounded-md px-3 text-sm font-medium outline-none hover:bg-navy-foreground/10 focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                    isActive
+                      ? 'bg-navy-foreground/10 text-navy-foreground'
+                      : 'text-navy-foreground/80',
                   )
                 }
               >
@@ -49,7 +51,7 @@ export function AppHeader({ onSignOut }: AppHeaderProps) {
           <Button
             variant="outline"
             onClick={onSignOut}
-            className="border-white/30 bg-transparent text-navy-foreground hover:bg-white/10 hover:text-navy-foreground"
+            className="border-navy-foreground/30 bg-transparent text-navy-foreground hover:bg-navy-foreground/10 hover:text-navy-foreground"
           >
             Sign out
           </Button>

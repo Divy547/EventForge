@@ -30,7 +30,7 @@ export function RecentFailures({ failures }: RecentFailuresProps) {
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <Link
                     to={`/deliveries/${f.deliveryId}`}
-                    className="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    className="font-mono text-sm font-medium text-primary underline underline-offset-4 hover:no-underline"
                   >
                     {f.eventType}
                   </Link>

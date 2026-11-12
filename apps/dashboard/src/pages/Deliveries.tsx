@@ -103,7 +103,7 @@ export function Deliveries({ apiKey, onSignOut }: DeliveriesProps) {
                           <Link
                             to={`/deliveries/${delivery.id}`}
                             title={delivery.id}
-                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            className="font-medium text-primary underline underline-offset-4 hover:no-underline"
                           >
                             {shortId(delivery.id)}
                           </Link>
@@ -134,7 +134,7 @@ export function Deliveries({ apiKey, onSignOut }: DeliveriesProps) {
                           <Link
                             to={`/events/${delivery.eventId}`}
                             title={delivery.eventId}
-                            className="text-primary underline-offset-4 hover:underline"
+                            className="text-primary underline underline-offset-4 hover:no-underline"
                           >
                             {shortId(delivery.eventId)}
                           </Link>

@@ -1,29 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  THEME_ORDER,
   applyTheme,
-  loadThemePreference,
-  saveThemePreference,
+  initialTheme,
+  loadStoredTheme,
+  saveTheme,
+  systemTheme,
   watchSystemTheme,
-  type ThemePreference,
+  type Theme,
 } from '@/lib/theme';
 
-/** The visitor's theme choice; "system" follows the OS, including while the page is open. */
+/** Light or dark: the saved choice, or the OS setting (followed live) until the visitor picks one. */
 export function useTheme() {
-  const [preference, setPreference] = useState<ThemePreference>(() => loadThemePreference());
+  const [theme, setTheme] = useState<Theme>(() => initialTheme());
+  const [chosen, setChosen] = useState<boolean>(() => loadStoredTheme() !== null);
 
   useEffect(() => {
-    applyTheme(preference);
-    if (preference !== 'system') return;
-    return watchSystemTheme(() => applyTheme('system'));
-  }, [preference]);
+    applyTheme(theme);
+  }, [theme]);
 
-  /** system -> light -> dark -> system */
-  const cycle = useCallback(() => {
-    const next = THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length]!;
-    saveThemePreference(next);
-    setPreference(next);
-  }, [preference]);
+  useEffect(() => {
+    if (chosen) return;
+    return watchSystemTheme(() => setTheme(systemTheme()));
+  }, [chosen]);
 
-  return { preference, cycle };
+  const toggle = useCallback(() => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    saveTheme(next);
+    setChosen(true);
+    setTheme(next);
+  }, [theme]);
+
+  return { theme, toggle };
 }

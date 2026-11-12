@@ -4,10 +4,10 @@ import { MotionConfig } from 'motion/react';
 import { BrowserRouter } from 'react-router';
 import './index.css';
 import { App } from './App';
-import { applyTheme, loadThemePreference } from './lib/theme';
+import { applyTheme, initialTheme } from './lib/theme';
 
 // Before the first render, so a dark-mode visitor does not see a light flash.
-applyTheme(loadThemePreference());
+applyTheme(initialTheme());
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

@@ -9,27 +9,24 @@ afterEach(() => {
 });
 
 describe('ThemeToggle', () => {
-  it('cycles System, Light, Dark, System; names the current and next theme; applies and stores it', async () => {
+  it('flips between light and dark, names the theme it switches to, applies and stores it', async () => {
     const user = userEvent.setup();
     render(<ThemeToggle />);
 
-    await user.click(screen.getByRole('button', { name: 'Theme: System. Switch to Light.' }));
-    expect(document.documentElement).not.toHaveClass('dark');
-    expect(window.localStorage.getItem('eventforge.theme')).toBe('light');
-
-    await user.click(screen.getByRole('button', { name: 'Theme: Light. Switch to Dark.' }));
+    // Tests run with no OS dark preference, so the page starts light.
+    await user.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
     expect(document.documentElement).toHaveClass('dark');
     expect(window.localStorage.getItem('eventforge.theme')).toBe('dark');
 
-    await user.click(screen.getByRole('button', { name: 'Theme: Dark. Switch to System.' }));
-    expect(window.localStorage.getItem('eventforge.theme')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Theme: System. Switch to Light.' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(window.localStorage.getItem('eventforge.theme')).toBe('light');
   });
 
   it('starts from the stored choice', () => {
     window.localStorage.setItem('eventforge.theme', 'dark');
     render(<ThemeToggle />);
-    expect(screen.getByRole('button', { name: 'Theme: Dark. Switch to System.' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeVisible();
     expect(document.documentElement).toHaveClass('dark');
   });
 });

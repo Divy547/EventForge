@@ -14,7 +14,7 @@ interface LandingProps {
 export function Landing({ onSignedIn, onSandboxStarted }: LandingProps) {
   return (
     <div className="min-h-screen">
-      <header className="bg-navy text-navy-foreground">
+      <header className="border-b border-border bg-navy text-navy-foreground">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <span className="font-heading text-lg font-semibold">EventForge</span>
           <ThemeToggle />
@@ -22,7 +22,7 @@ export function Landing({ onSignedIn, onSandboxStarted }: LandingProps) {
         <div className="mx-auto grid max-w-5xl gap-10 px-4 pt-6 pb-12 lg:grid-cols-[1fr_22rem] lg:items-start">
           <div>
             <h1 className="text-4xl leading-tight font-bold">Webhook delivery you can watch.</h1>
-            <p className="mt-3 max-w-xl text-lg text-white/80">
+            <p className="mt-3 max-w-xl text-lg text-navy-foreground/80">
               EventForge takes your events, delivers them to every subscribed endpoint, retries what
               fails, and keeps a dead-letter queue for what cannot be delivered.
             </p>

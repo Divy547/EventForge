@@ -36,7 +36,7 @@ function Facts({ delivery }: { delivery: Delivery }) {
       <Fact term="Event">
         <Link
           to={`/events/${delivery.eventId}`}
-          className="text-primary underline-offset-4 hover:underline"
+          className="text-primary underline underline-offset-4 hover:no-underline"
         >
           {event ? `${event.eventType} (from ${event.source})` : delivery.eventId}
         </Link>

@@ -114,7 +114,7 @@ export function Events({ apiKey, onSignOut }: EventsProps) {
                         <TableCell className="font-mono">
                           <Link
                             to={`/events/${event.id}`}
-                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            className="font-medium text-primary underline underline-offset-4 hover:no-underline"
                           >
                             {event.eventType}
                           </Link>

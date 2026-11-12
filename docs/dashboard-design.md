@@ -5,11 +5,11 @@
 
 ## Design (decided 2026-11-12)
 
-- **Direction C, "Pipeline".** Dark navy header; Overview opens with a hero showing the flow
+- **Direction C, "Pipeline", re-themed black & white (2026-11-12).** Black header; Overview opens with a hero showing the flow
   _Ingested → Fanned out → Outcome_ (completed, in flight, retrying, dead letter); below it a subscription
-  health list (success rate per subscription) and a live activity feed. Headings in Space Grotesk, body in
-  Inter, numbers and IDs in JetBrains Mono (all bundled). Accent orange for primary actions (white-on-`#C2410C`
-  keeps 4.5:1 contrast). Status colours are always paired with a text label, never colour alone.
+  health list (success rate per subscription) and a live activity feed. Headings in Fraunces (serif), body in
+  Inter, numbers and IDs in JetBrains Mono (all bundled). Primary is black (inverted to white in dark mode) and buttons are
+  outline-style; red is the only colour, kept for failure states. Colours live as CSS variables in `src/index.css`. Status colours are always paired with a text label, never colour alone.
 - **Shared rules:** touch targets at least 44 px; visible focus; real `<button>`/`<a>`/`<label>` elements;
   usable at phone width (nav wraps, tables scroll in a box); light and dark theme through shadcn CSS variables.
 - **Landing page explainer animation** (`motion`, loops about 16 s; mockup on the canvas above). One event travels:

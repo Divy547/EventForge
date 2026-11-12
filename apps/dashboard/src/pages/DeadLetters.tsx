@@ -179,7 +179,7 @@ export function DeadLetters({ apiKey, onSignOut }: DeadLettersProps) {
               <p className="mt-2">
                 <Link
                   to="/deliveries?status=PENDING"
-                  className="text-primary underline-offset-4 hover:underline"
+                  className="text-primary underline underline-offset-4 hover:no-underline"
                 >
                   See pending deliveries
                 </Link>
@@ -247,7 +247,7 @@ export function DeadLetters({ apiKey, onSignOut }: DeadLettersProps) {
                           <Link
                             to={`/deliveries/${delivery.id}`}
                             title={delivery.id}
-                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            className="font-medium text-primary underline underline-offset-4 hover:no-underline"
                           >
                             {shortId(delivery.id)}
                           </Link>
@@ -274,7 +274,7 @@ export function DeadLetters({ apiKey, onSignOut }: DeadLettersProps) {
                           <Link
                             to={`/events/${delivery.eventId}`}
                             title={delivery.eventId}
-                            className="text-primary underline-offset-4 hover:underline"
+                            className="text-primary underline underline-offset-4 hover:no-underline"
                           >
                             {shortId(delivery.eventId)}
                           </Link>

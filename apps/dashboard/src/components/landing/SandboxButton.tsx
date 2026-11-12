@@ -32,15 +32,15 @@ export function SandboxButton({ onStarted }: SandboxButtonProps) {
       <Button
         onClick={start}
         disabled={starting}
-        className="bg-white text-navy hover:bg-white/90 focus-visible:ring-white/50"
+        className="border-navy-foreground text-navy-foreground hover:bg-navy-foreground hover:text-navy focus-visible:ring-navy-foreground/50"
       >
         {starting ? 'Starting…' : 'Try the live sandbox'}
       </Button>
-      <p className="mt-2 text-sm text-white/70">
+      <p className="mt-2 text-sm text-navy-foreground/70">
         No account needed: send test events to a built-in receiver and watch them being delivered.
       </p>
       {error && (
-        <p role="alert" className="mt-2 text-sm font-medium text-white">
+        <p role="alert" className="mt-2 text-sm font-medium text-navy-foreground">
           {error}
         </p>
       )}

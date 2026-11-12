@@ -95,7 +95,7 @@ export function Explainer() {
           <Button
             variant="outline"
             onClick={() => setPlaying((p) => !p)}
-            className="border-white/30 bg-transparent text-navy-foreground hover:bg-white/10 hover:text-navy-foreground"
+            className="border-navy-foreground/30 bg-transparent text-navy-foreground hover:bg-navy-foreground/10 hover:text-navy-foreground"
           >
             {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
             {playing ? 'Pause animation' : 'Play animation'}
@@ -105,7 +105,7 @@ export function Explainer() {
 
       {/* On phones the diagram keeps its size and scrolls sideways instead of shrinking. */}
       <div
-        className="overflow-x-auto rounded-lg border border-white/15 bg-white/5"
+        className="overflow-x-auto rounded-lg border border-navy-foreground/15 bg-navy-foreground/5"
         // Keyboard users need to be able to scroll the box.
         tabIndex={0}
         role="group"
@@ -122,7 +122,7 @@ export function Explainer() {
                 y1={a.y + H / 2}
                 x2={b.x}
                 y2={b.y + H / 2}
-                className="stroke-white/30"
+                className="stroke-navy-foreground/30"
                 strokeWidth={2}
               />
             );
@@ -136,7 +136,9 @@ export function Explainer() {
                 height={H}
                 rx={8}
                 className={
-                  lit(node) ? 'fill-primary stroke-primary' : 'fill-white/10 stroke-white/30'
+                  lit(node)
+                    ? 'fill-navy-foreground stroke-navy-foreground'
+                    : 'fill-navy-foreground/10 stroke-navy-foreground/30'
                 }
                 strokeWidth={2}
               />
@@ -144,7 +146,10 @@ export function Explainer() {
                 x={node.x + W / 2}
                 y={node.y + H / 2 + 5}
                 textAnchor="middle"
-                className="fill-white font-sans text-[14px] font-semibold"
+                className={
+                  'font-sans text-[14px] font-semibold ' +
+                  (lit(node) ? 'fill-navy' : 'fill-navy-foreground')
+                }
               >
                 {node.label}
               </text>
@@ -158,7 +163,7 @@ export function Explainer() {
                 x={n.x + W / 2}
                 y={n.y + H + 16}
                 textAnchor="middle"
-                className="fill-white font-mono text-[12px]"
+                className="fill-navy-foreground font-mono text-[12px]"
                 opacity={badgeShown(from) ? 1 : 0}
               >
                 {text}
@@ -168,7 +173,8 @@ export function Explainer() {
           {animated && (
             <motion.circle
               r={9}
-              className="fill-white"
+              className="fill-navy-foreground stroke-navy"
+              strokeWidth={2}
               initial={false}
               animate={{ cx: DOT_AT[step]!.x, cy: DOT_AT[step]!.y }}
               transition={{ duration: 0.8, ease: 'easeInOut' }}
@@ -186,7 +192,9 @@ export function Explainer() {
               aria-current={current ? 'step' : undefined}
               className={
                 'rounded-md border p-3 text-sm transition-colors ' +
-                (current ? 'border-primary bg-primary/20' : 'border-white/15 text-white/80')
+                (current
+                  ? 'border-navy-foreground bg-navy-foreground/15'
+                  : 'border-navy-foreground/15 text-navy-foreground/80')
               }
             >
               <span className="mr-1 font-mono font-semibold">{index + 1}.</span>
@@ -195,7 +203,7 @@ export function Explainer() {
           );
         })}
       </ol>
-      <p className="text-xs text-white/70">
+      <p className="text-xs text-navy-foreground/70">
         Endpoint names and the retry story are illustrative, not live data.
       </p>
     </section>

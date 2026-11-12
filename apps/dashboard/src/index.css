@@ -1,75 +1,77 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import '@fontsource-variable/inter';
-@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/fraunces';
 @import '@fontsource-variable/jetbrains-mono';
 
 @custom-variant dark (&:is(.dark *));
 
-/* Tokens follow shadcn's CSS-variable convention. "Pipeline" look: dark navy chrome over a light page,
-   orange for primary actions (white on #c2410c keeps 4.5:1 contrast). */
+/* Tokens follow shadcn's CSS-variable convention. Black & white look: chrome that matches the theme (light grey in light mode, black in dark mode),
+   black primary (white on #0a0a0a is 19.8:1; inverted in dark mode). Buttons are outline-style, see
+   components/ui/button.tsx. The only colour left is a red for failure states. The --navy token keeps its
+   name but now holds the chrome colour of the current theme. */
 :root {
   color-scheme: light;
   --radius: 0.625rem;
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #ffffff;
+  --foreground: #0a0a0a;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #0a0a0a;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #c2410c;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
   --primary-foreground: #ffffff;
-  --secondary: #e2e8f0;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
-  --accent: #e2e8f0;
-  --accent-foreground: #0f172a;
+  --secondary: #f4f4f4;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f4f4f4;
+  --muted-foreground: #525252;
+  --accent: #f0f0f0;
+  --accent-foreground: #0a0a0a;
   --destructive: #b91c1c;
-  --border: #cbd5e1;
-  --input: #cbd5e1;
-  --ring: #c2410c;
-  --chart-1: #15803d;
-  --chart-2: #1d4ed8;
-  --chart-3: #b45309;
+  --border: #d4d4d4;
+  --input: #737373;
+  --ring: #0a0a0a;
+  --chart-1: #0a0a0a;
+  --chart-2: #a3a3a3;
+  --chart-3: #737373;
   --chart-4: #b91c1c;
-  --chart-5: #475569;
-  --navy: #0b1220;
-  --navy-foreground: #e2e8f0;
+  --chart-5: #404040;
+  --navy: #f4f4f4;
+  --navy-foreground: #0a0a0a;
 }
 
 .dark {
   color-scheme: dark;
-  --background: #0b1220;
-  --foreground: #e2e8f0;
-  --card: #111a2e;
-  --card-foreground: #e2e8f0;
-  --popover: #111a2e;
-  --popover-foreground: #e2e8f0;
-  --primary: #ea580c;
-  --primary-foreground: #0b1220;
-  --secondary: #1e293b;
-  --secondary-foreground: #e2e8f0;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #e2e8f0;
+  --background: #0f0f0f;
+  --foreground: #fafafa;
+  --card: #171717;
+  --card-foreground: #fafafa;
+  --popover: #171717;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f1f;
+  --muted-foreground: #a3a3a3;
+  --accent: #262626;
+  --accent-foreground: #fafafa;
   --destructive: #f87171;
-  --border: #334155;
-  --input: #334155;
-  --ring: #ea580c;
-  --chart-1: #4ade80;
-  --chart-2: #60a5fa;
-  --chart-3: #fbbf24;
+  --border: #333333;
+  --input: #737373;
+  --ring: #fafafa;
+  --chart-1: #fafafa;
+  --chart-2: #686868;
+  --chart-3: #969696;
   --chart-4: #f87171;
-  --chart-5: #94a3b8;
-  --navy: #060b16;
-  --navy-foreground: #e2e8f0;
+  --chart-5: #c8c8c8;
+  --navy: #000000;
+  --navy-foreground: #fafafa;
 }
 
 @theme inline {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-heading: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Fraunces Variable', ui-serif, Georgia, serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

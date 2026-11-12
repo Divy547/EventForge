@@ -84,14 +84,14 @@ export function SandboxRun({ apiKey, run, onUnauthorized }: SandboxRunProps) {
       <div className="mt-3 flex flex-wrap gap-x-5 text-sm">
         <Link
           to={`/events/${run.eventId}`}
-          className="inline-flex h-11 items-center text-primary underline-offset-4 hover:underline"
+          className="inline-flex h-11 items-center text-primary underline underline-offset-4 hover:no-underline"
         >
           View event
         </Link>
         {delivery && (
           <Link
             to={`/deliveries/${delivery.id}`}
-            className="inline-flex h-11 items-center text-primary underline-offset-4 hover:underline"
+            className="inline-flex h-11 items-center text-primary underline underline-offset-4 hover:no-underline"
           >
             View delivery and attempts
           </Link>
@@ -99,7 +99,7 @@ export function SandboxRun({ apiKey, run, onUnauthorized }: SandboxRunProps) {
         {delivery?.status === 'DEAD_LETTER' && (
           <Link
             to="/dead-letters"
-            className="inline-flex h-11 items-center text-primary underline-offset-4 hover:underline"
+            className="inline-flex h-11 items-center text-primary underline underline-offset-4 hover:no-underline"
           >
             Replay it from the dead-letter queue
           </Link>

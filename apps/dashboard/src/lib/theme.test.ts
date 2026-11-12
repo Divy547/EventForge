@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  applyTheme,
-  loadThemePreference,
-  resolveTheme,
-  saveThemePreference,
-  watchSystemTheme,
-} from './theme';
+import { applyTheme, initialTheme, loadStoredTheme, saveTheme, watchSystemTheme } from './theme';
 
 function stubSystemDark(matches: boolean) {
   const listeners = new Set<() => void>();
@@ -26,45 +20,49 @@ afterEach(() => {
   document.documentElement.classList.remove('dark');
 });
 
-describe('theme preference', () => {
-  it('defaults to system and ignores garbage in storage', () => {
-    expect(loadThemePreference()).toBe('system');
+describe('theme storage', () => {
+  it('has no stored choice by default, and ignores garbage or an old "system" value', () => {
+    expect(loadStoredTheme()).toBeNull();
     window.localStorage.setItem('eventforge.theme', 'purple');
-    expect(loadThemePreference()).toBe('system');
+    expect(loadStoredTheme()).toBeNull();
+    window.localStorage.setItem('eventforge.theme', 'system');
+    expect(loadStoredTheme()).toBeNull();
   });
 
-  it('round-trips light and dark, and "system" clears the stored value', () => {
-    saveThemePreference('dark');
-    expect(loadThemePreference()).toBe('dark');
-    saveThemePreference('system');
-    expect(window.localStorage.getItem('eventforge.theme')).toBeNull();
+  it('round-trips light and dark', () => {
+    saveTheme('dark');
+    expect(loadStoredTheme()).toBe('dark');
+    saveTheme('light');
+    expect(loadStoredTheme()).toBe('light');
   });
 
   it('survives storage that throws', () => {
+    stubSystemDark(false);
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');
     });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
-    expect(loadThemePreference()).toBe('system');
-    expect(() => saveThemePreference('dark')).not.toThrow();
+    expect(loadStoredTheme()).toBeNull();
+    expect(initialTheme()).toBe('light');
+    expect(() => saveTheme('dark')).not.toThrow();
     vi.restoreAllMocks();
   });
 });
 
 describe('applying the theme', () => {
-  it('resolves "system" from the OS setting and explicit choices as they are', () => {
+  it('starts from the OS setting until a choice is saved, then from the saved choice', () => {
     stubSystemDark(true);
-    expect(resolveTheme('system')).toBe('dark');
-    expect(resolveTheme('light')).toBe('light');
+    expect(initialTheme()).toBe('dark');
+    saveTheme('light');
+    expect(initialTheme()).toBe('light');
     stubSystemDark(false);
-    expect(resolveTheme('system')).toBe('light');
-    expect(resolveTheme('dark')).toBe('dark');
+    saveTheme('dark');
+    expect(initialTheme()).toBe('dark');
   });
 
   it('toggles the dark class on <html>', () => {
-    stubSystemDark(false);
     applyTheme('dark');
     expect(document.documentElement).toHaveClass('dark');
     applyTheme('light');
