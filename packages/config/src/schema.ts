@@ -28,6 +28,7 @@ export const envSchema = z
     WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
     DELIVERY_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
     STALE_RECOVERY_INTERVAL_MS: z.coerce.number().int().positive().default(30000),
+
     ALLOW_LOCAL_WEBHOOKS: z
       .union([z.boolean(), z.string()])
       .optional()

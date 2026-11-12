@@ -20,6 +20,8 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:migrate:prod": "node dist/scripts/migrate.js",
     "db:seed": "tsx src/scripts/seed.ts",
+    "admin": "tsx src/scripts/admin.ts",
+    "admin:prod": "node dist/scripts/admin.js",
     "db:verify": "tsx src/scripts/verify.ts"
   },
   "dependencies": {

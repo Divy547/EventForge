@@ -31,6 +31,8 @@
     "db:migrate": "pnpm --filter @eventforge/database db:migrate",
     "db:migrate:prod": "pnpm --filter @eventforge/database db:migrate:prod",
     "db:seed": "pnpm --filter @eventforge/database db:seed",
+    "admin": "pnpm --filter @eventforge/database admin",
+    "admin:prod": "pnpm --filter @eventforge/database admin:prod",
     "db:verify": "pnpm --filter @eventforge/database db:verify",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
