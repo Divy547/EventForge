@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 4: tasks 1-3 done, the load test, the README rewrite and the claims pass; Phase 3 only lacks the credit burn rate)_
+_Last updated: 2026-11-12 (Phase 4: tasks 1-4 done, the load test, the README rewrite, the claims pass and the interview guide; Phase 3 only lacks the credit burn rate)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -15,7 +15,7 @@ the credit burn rate (waits on Azure Cost Management data).
 
 Phase 4 (portfolio polish) is **in progress**: task 1 (load test, run locally) is done and led to a worker fix
 (`e0f9600`); task 2 (README rewrite, `325b2e1`) is done; task 3 (claims pass, `8aac462`, `ead7b54`) is done in part
-(see its note); tasks 4-5 are not started.
+(see its note); task 4 (interview guide, `146233b`) is done; task 5 is not started.
 
 ---
 
@@ -160,8 +160,8 @@ stops newer pushes from cancelling runs on `main`.
 
 ### Phase 4 — Portfolio Polish & Interview Readiness
 
-**Status: 🔄 In progress (started 2026-11-12).** Tasks 1-3 are done (task 3 with a gap, see its note); tasks 4-5 are not
-started and each needs "start with task N".
+**Status: 🔄 In progress (started 2026-11-12).** Tasks 1-4 are done (task 3 with a gap, see its note); task 5 is not
+started and needs "start with task 5".
 
 **Tasks**
 
@@ -182,7 +182,15 @@ started and each needs "start with task N".
    and two missing outbox dead-letter metrics. Details are under "Task 3 results".
    **Gap:** `docs/architecture.md` sections 8-11 (rate limiting, per-subscription limits, retention, admin) and the Docker
    details in `docs/deployment.md` were not traced sentence by sentence, so the "every claim is backed" criterion stays open.
-4. Concept walkthrough and Q&A practice covering every major component.
+   Writing task 4 turned up one more error, now fixed (`f52f75d`): the SDK usage examples in `README.md` and
+   `docs/architecture.md` did not match the real API.
+4. ✅ **Interview guide** (`146233b`, `docs/interview-guide.md`). A 60-second pitch, one event traced end to end, and a
+   section per component (outbox, idempotent ingestion, `SKIP LOCKED`, the delivery state machine, at-least-once and
+   consumer idempotency, lease recovery, retry classification and backoff, replay, signing, SSRF, API keys, rate limits,
+   throttle, retention, observability, sandbox, deployment), each with likely questions, answers and code pointers. It
+   also has a self-test checklist, eleven limits to own, and the numbers that may and may not be quoted. Written from the
+   code, not from the docs. **Not done:** the user has not yet practised from it, so the "can explain without notes"
+   criterion stays open. Findings it records are under "Task 4 findings".
 5. Draft resume bullet points based on measured results.
 
 **Why the load test is local only.** `scripts/load-test.ts` writes its project and key straight into Postgres, runs its own
@@ -226,13 +234,28 @@ deliveries and needs a replay; only a `Retry-After` header stretches a wait. The
 Be ready to explain it in interviews, and consider whether the defaults (or a per-subscription `maxAttempts`) should
 change; that is a product decision, not made here.
 
+**Task 4 findings** (read from the code while writing the guide; none are fixed, none block anything). They are product
+or hardening decisions, so each needs approval before any change.
+
+- **Recovery race (read, not reproduced).** `recoverAbandonedInFlightDeliveries` selects abandoned rows and then updates
+  each by id with no status guard. One worker is protected by an `isRecovering` flag; two workers running the pass at once
+  could both record a `WORKER_CRASHED` attempt and double-increment the count. A conditional update or `SKIP LOCKED` on the
+  select would close it. Multi-replica operation is already documented as untested.
+- **SSRF block list gaps (verified by running `isPrivateIp`).** `100.64.0.0/10` is not blocked, and the IPv6 check is
+  prefix-based, so `::ffff:7f00:1` and `0:0:0:0:0:0:0:1` return `false`. Whether Node's resolver or sockets can present
+  those forms was not tested. Parsing with `net.BlockList` would replace the string prefixes.
+- **Signing secrets are stored as plaintext** in `subscriptions` because the worker signs with them directly. Encrypting
+  them at rest needs a key the worker also holds.
+- Already known and covered in the guide: the 15-second default retry budget, the fixed 5-minute outbox claim timeout,
+  fixed-window rate limits that fail open, and offset pagination.
+
 **Acceptance criteria**
 
 - [x] README shows a working live link (or clearly marked fallback demo video) and real benchmark
       numbers with the hardware they were measured on. (`325b2e1`; the numbers are local, and the README says so.)
 - [ ] Every claim in README and docs is backed by code, a test, or a measurement. (Task 3 covered the README, the
       overview, `observability.md` and the delivery semantics; the gap is listed under task 3.)
-- [ ] The user can explain, without notes: the transactional outbox, `FOR UPDATE SKIP LOCKED`,
+- [ ] The user can explain, without notes (study material is `docs/interview-guide.md`; only the user can tick this): the transactional outbox, `FOR UPDATE SKIP LOCKED`,
       idempotency via `ON CONFLICT`, at-least-once delivery and consumer idempotency, lease-based
       crash recovery, retry classification and backoff, DLQ replay, HMAC signing and verification,
       and SSRF protection.
