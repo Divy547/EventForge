@@ -332,15 +332,84 @@ and `migrate` has `restart: 'no'`; migrations run on `dc up`, not on boot.
 
 ### Deploy a new version
 
-CI publishes images to GHCR on every push to `main` that passes all checks. On the VM:
+CI publishes images to GHCR on every push to `main` that passes all checks. With
+[automatic deploys](#automatic-deploys-ci) set up, the VM updates itself. To deploy by hand, run the same script CI
+runs, on the VM:
+
+```bash
+~/EventForge/deploy/deploy.sh
+```
+
+It runs `git pull --ff-only` (compose and Caddy files), `dc pull`, `dc up -d --no-build` (migrations run first; a failed
+migration stops the deploy), waits until the API, worker and Caddy are up, and prunes old image layers. It exits
+non-zero if the stack is not healthy within 180 seconds. The long-hand version, if you ever need it:
 
 ```bash
 cd ~/EventForge
 git pull                       # only needed when docker-compose.prod.yml or deploy/ changed
 dc pull
-dc up -d --no-build            # migrations run first; a failed migration stops the deploy
+dc up -d --no-build
 docker image prune -f          # reclaim disk from old layers
 ```
+
+### Automatic deploys (CI)
+
+After `publish-images` succeeds on `main`, the `deploy` job in `.github/workflows/ci.yml` connects to the VM over SSH,
+runs `deploy/deploy.sh`, then checks `/v1/ready` on the public URL. The job stays **off until the `DEPLOY_URL`
+repository variable exists**, so nothing here breaks CI before you set it up.
+
+> **Status:** the script was tested locally (healthy deploy, repeat deploy, unhealthy worker, bad image tag, missing
+> env file). The CI job and the key setup below have **not been run yet**; the first push after setup is their test.
+
+The deploy key can do exactly one thing. Its `authorized_keys` entry forces `deploy.sh` whatever command is requested
+and `restrict` removes shell, port forwarding and agent access, so a leaked `SSH_KEY` secret can at worst redeploy the
+images already published. The host key is pinned in `SSH_KNOWN_HOSTS`, so the runner will not talk to another machine.
+
+One-time setup (replace the address, user and key path with yours):
+
+```bash
+VM=azureuser@40.81.24.8
+KEY=~/.ssh/<your-key>.pem
+
+# 1. A dedicated key pair, used for nothing else, with no passphrase (CI cannot type one)
+ssh-keygen -t ed25519 -N "" -C eventforge-ci-deploy -f ~/.ssh/eventforge-deploy
+
+# 2. On the VM: get deploy/deploy.sh, and run it once by hand to prove it works
+ssh -i $KEY $VM 'cd ~/EventForge && git pull --ff-only && ./deploy/deploy.sh'
+
+# 3. Authorise the new key on the VM, pinned to that script
+printf 'restrict,command="/home/azureuser/EventForge/deploy/deploy.sh" %s\n' "$(cat ~/.ssh/eventforge-deploy.pub)" \
+  | ssh -i $KEY $VM 'cat >> ~/.ssh/authorized_keys'
+
+# 4. Test the restricted key: this must run the deploy (not give a shell, and not echo "hi")
+ssh -i ~/.ssh/eventforge-deploy $VM 'echo hi'
+
+# 5. The line for the SSH_KNOWN_HOSTS secret, read from the VM over your already-trusted connection
+printf '%s %s\n' 40.81.24.8 "$(ssh -i $KEY $VM 'cat /etc/ssh/ssh_host_ed25519_key.pub')"
+```
+
+Then in GitHub, **Settings, Secrets and variables, Actions**:
+
+| Kind     | Name              | Value                                                                                         |
+| :------- | :---------------- | :-------------------------------------------------------------------------------------------- |
+| Secret   | `SSH_HOST`        | `40.81.24.8`                                                                                  |
+| Secret   | `SSH_USER`        | `azureuser`                                                                                   |
+| Secret   | `SSH_KEY`         | The private key file `~/.ssh/eventforge-deploy`, whole, including the BEGIN/END lines         |
+| Secret   | `SSH_KNOWN_HOSTS` | The single line printed by step 5                                                             |
+| Variable | `DEPLOY_URL`      | `https://40-81-24-8.sslip.io` (no trailing slash). **Add this last: it switches the job on.** |
+
+Paste secrets only into GitHub, never into chat or a commit. The next push to `main` that passes CI deploys; watch the
+**Deploy to Production (SSH)** job. To turn automatic deploys off, delete the `DEPLOY_URL` variable.
+
+Things to know:
+
+- The Actions log of a public repository is public. `deploy.sh` prints container status only, never logs or
+  environment values; keep it that way when you change it.
+- Anyone who can push to `main` controls what gets deployed, so protect the branch (Settings, Branches) if others get
+  write access.
+- A pinned `EVENTFORGE_TAG` in `.env.production` is respected by automatic deploys, so pinning also freezes the server.
+- A deploy that does not become healthy fails the job, but it does not roll itself back: compose has already replaced
+  the containers. Check `dc ps -a` on the VM and roll back (below) if needed.
 
 ### Roll back
 
@@ -454,3 +523,6 @@ Funnel or a Cloudflare quick tunnel); see [deploy-fallback.md](deploy-fallback.m
 | A container is killed or `Exited (137)`      | Out of memory: `docker inspect` shows `OOMKilled`. Raise its limit or resize the VM.                          |
 | Everything is slow after a burst of traffic  | Burstable CPU credits ran out (B-series). It recovers on its own; resize for sustained load tests.            |
 | Sandbox returns 404                          | `SANDBOX_ENABLED` is not `true` in `.env.production`; recreate with `dc up -d --no-build`.                    |
+| Deploy job: `Permission denied (publickey)`  | `SSH_KEY` secret incomplete (needs the BEGIN/END lines) or the public key is missing from `authorized_keys`.  |
+| Deploy job: `Host key verification failed`   | `SSH_KNOWN_HOSTS` does not start with the same address as `SSH_HOST`, or the VM was rebuilt (new host key).   |
+| Deploy job skipped                           | The `DEPLOY_URL` repository variable is not set, or the push was not to `main`.                               |
