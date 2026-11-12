@@ -237,4 +237,102 @@ describe('OutboxPollerService', () => {
       10,
     );
   });
+  describe('drain', () => {
+    // pollOnce is stubbed so these tests only exercise the loop: how many batches a tick runs.
+    const stubPollOnce = (counts: number[]) => {
+      const spy = jest.spyOn(poller, 'pollOnce');
+      for (const count of counts) {
+        spy.mockResolvedValueOnce(count);
+      }
+      spy.mockResolvedValue(0);
+      return spy;
+    };
+
+    it('polls once when the first batch is not full', async () => {
+      const spy = stubPollOnce([3]);
+
+      const total = await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(total).toBe(3);
+    });
+
+    it('keeps polling while batches are full and stops at the first short batch', async () => {
+      // batch size is 10: two full batches, then a short one
+      const spy = stubPollOnce([10, 10, 4]);
+
+      const total = await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(total).toBe(24);
+    });
+
+    it('stops after an empty poll even following a full batch', async () => {
+      const spy = stubPollOnce([10, 0]);
+
+      const total = await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(total).toBe(10);
+    });
+
+    it('never runs more than MAX_BATCHES_PER_TICK batches in one tick', async () => {
+      const spy = jest.spyOn(poller, 'pollOnce').mockResolvedValue(10);
+
+      const total = await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(OutboxPollerService.MAX_BATCHES_PER_TICK);
+      expect(total).toBe(OutboxPollerService.MAX_BATCHES_PER_TICK * 10);
+    });
+
+    it('ignores a tick that starts while another drain is still running', async () => {
+      let release!: (count: number) => void;
+      const spy = jest.spyOn(poller, 'pollOnce').mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            release = resolve;
+          }),
+      );
+
+      const first = poller.drain();
+      const overlapping = await poller.drain();
+      release(2);
+      const total = await first;
+
+      expect(overlapping).toBe(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(total).toBe(2);
+    });
+
+    it('can drain again after a previous drain finished', async () => {
+      const spy = stubPollOnce([1, 1]);
+
+      await poller.drain();
+      await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not poll again after shutdown has started', async () => {
+      const spy = stubPollOnce([10, 10]);
+      await poller.onApplicationShutdown();
+
+      const total = await poller.drain();
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(total).toBe(0);
+    });
+
+    it('stops looping when shutdown starts between batches', async () => {
+      const spy = jest.spyOn(poller, 'pollOnce').mockImplementation(async () => {
+        void poller.onApplicationShutdown();
+        return 10;
+      });
+
+      const total = await poller.drain();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(total).toBe(10);
+    });
+  });
 });

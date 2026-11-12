@@ -18,7 +18,15 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
   private readonly workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
   private pollTimer: NodeJS.Timeout | null = null;
   private isPolling = false;
+  private isDraining = false;
   private isShuttingDown = false;
+
+  /**
+   * Upper bound on consecutive full batches in one timer tick. It keeps a single tick bounded
+   * (at the default batch size of 50 that is 1000 records) so a very deep backlog cannot hold
+   * the loop forever; whatever is left is picked up on the next tick.
+   */
+  static readonly MAX_BATCHES_PER_TICK = 20;
 
   constructor(
     private readonly dbService: WorkerDatabaseService,
@@ -32,7 +40,7 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
     );
 
     this.pollTimer = setInterval(() => {
-      void this.pollOnce();
+      void this.drain();
     }, this.configService.outboxPollIntervalMs);
     this.pollTimer.unref();
   }
@@ -52,6 +60,38 @@ export class OutboxPollerService implements OnModuleInit, OnApplicationShutdown 
     }
 
     this.logger.log('Outbox poller stopped gracefully.');
+  }
+
+  /**
+   * One timer tick: keeps polling while batches come back full, so a backlog is worked off
+   * immediately instead of at one batch per poll interval. Stops at the first short batch (the
+   * backlog is empty), after MAX_BATCHES_PER_TICK batches, or on shutdown.
+   *
+   * This is safe for failing records: a FAILED record is only claimable again after the claim
+   * timeout, so a full batch can never be the same failing records coming straight back.
+   * Overlapping ticks are ignored, and several workers can drain at once because the claim uses
+   * `FOR UPDATE SKIP LOCKED`.
+   */
+  async drain(): Promise<number> {
+    if (this.isDraining || this.isShuttingDown) {
+      return 0;
+    }
+
+    this.isDraining = true;
+    let total = 0;
+
+    try {
+      for (let batch = 0; batch < OutboxPollerService.MAX_BATCHES_PER_TICK; batch++) {
+        const claimed = await this.pollOnce();
+        total += claimed;
+        if (claimed < this.configService.outboxBatchSize || this.isShuttingDown) {
+          break;
+        }
+      }
+      return total;
+    } finally {
+      this.isDraining = false;
+    }
   }
 
   /**
