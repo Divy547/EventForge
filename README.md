@@ -149,12 +149,10 @@ Verify a delivery in your receiver with the SDK (the raw request body must be pa
 ```typescript
 import { EventForgeWebhook } from '@eventforge/sdk';
 
-const event = EventForgeWebhook.constructEvent({
-  payload: rawBody,
-  signatureHeader: req.headers['x-eventforge-signature'] as string,
-  secret: process.env.WEBHOOK_SECRET!,
-  toleranceSeconds: 300,
-});
+const webhook = new EventForgeWebhook({ toleranceSeconds: 300 });
+
+// throws WebhookVerificationError if the signature or timestamp is invalid
+const event = webhook.constructEvent(rawBody, req.headers, process.env.WEBHOOK_SECRET!);
 ```
 
 ## Development

@@ -138,24 +138,23 @@ Because network failures can occur after a webhook is processed by the receiver 
 
 ### Consumer SDK (`@eventforge/sdk`)
 
-The official consumer SDK provides built-in deduplication and HMAC signature verification:
+The consumer SDK verifies the HMAC signature and timestamp, and ships a small in-memory idempotency store (single process only; use a database constraint or Redis for several instances). The deduplication check itself is written by the receiver, as below:
 
 ```typescript
 import { EventForgeWebhook, MemoryIdempotencyStore } from '@eventforge/sdk';
 
 const idempotencyStore = new MemoryIdempotencyStore({ ttlSeconds: 86400 });
-const webhookHandler = new EventForgeWebhook({
-  secret: process.env.WEBHOOK_SIGNING_SECRET!,
-  toleranceSeconds: 300, // Reject requests older than 5 minutes (replay attack protection)
-  idempotencyStore,
-});
+// Reject requests older than 5 minutes (replay attack protection)
+const webhookHandler = new EventForgeWebhook({ toleranceSeconds: 300 });
 
 app.post('/webhook', (req, res) => {
   try {
-    const event = webhookHandler.constructEvent({
-      payload: req.rawBody,
-      signatureHeader: req.headers['x-eventforge-signature'] as string,
-    });
+    // req.rawBody must be the unparsed request body
+    const event = webhookHandler.constructEvent(
+      req.rawBody,
+      req.headers,
+      process.env.WEBHOOK_SIGNING_SECRET!,
+    );
 
     // Check if this event delivery was already processed
     if (idempotencyStore.has(event.id)) {
