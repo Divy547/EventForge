@@ -46,6 +46,11 @@ export const envSchema = z
           .map((o) => o.trim())
           .filter(Boolean),
       ),
+    // Bearer token required to scrape API /metrics. Unset: open outside production, disabled in production.
+    METRICS_TOKEN: z.preprocess(
+      (val) => (val === '' ? undefined : val),
+      z.string().min(16, 'METRICS_TOKEN must be at least 16 characters').optional(),
+    ),
     TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
 
     ALLOW_LOCAL_WEBHOOKS: z

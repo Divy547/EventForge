@@ -1,4 +1,12 @@
-import { Controller, Get, HttpStatus, Inject, type OnModuleInit, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpStatus,
+  Inject,
+  type OnModuleInit,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { createConnection } from 'node:net';
@@ -12,6 +20,7 @@ import {
 import { defaultMetricsRegistry } from '@eventforge/common';
 import { DATABASE_CONNECTION } from '../database/database.provider.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { MetricsAuthGuard } from '../../common/guards/metrics-auth.guard.js';
 
 const dbPoolTotal = defaultMetricsRegistry.registerGauge(
   'eventforge_db_pool_total_connections',
@@ -168,9 +177,11 @@ export class HealthController implements OnModuleInit {
   }
 
   @Public()
+  @UseGuards(MetricsAuthGuard)
   @Get(['metrics', 'v1/metrics'])
   @ApiOperation({ summary: 'Prometheus metrics scrape endpoint' })
   @ApiResponse({ status: 200, description: 'Prometheus metrics in standard exposition format' })
+  @ApiResponse({ status: 401, description: 'Missing or invalid metrics token' })
   async getMetrics(@Res() res: Response): Promise<void> {
     const text = await defaultMetricsRegistry.exportPrometheusText();
     res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
