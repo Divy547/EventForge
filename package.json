@@ -14,6 +14,7 @@
     "demo": "node --experimental-strip-types scripts/demo.ts",
     "load-test": "node --experimental-strip-types scripts/load-test.ts",
     "smoke-test": "node --experimental-strip-types scripts/smoke-test.ts",
+    "smoke-test:remote": "node --experimental-strip-types scripts/smoke-test-remote.ts",
     "dev:api": "pnpm --filter @eventforge/api dev",
     "start:api": "pnpm --filter @eventforge/api start",
     "dev:worker": "pnpm --filter @eventforge/worker dev",
