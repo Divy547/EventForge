@@ -39,6 +39,7 @@ To prevent dual-write inconsistencies between PostgreSQL and message brokers (e.
    - If the transaction aborts, neither exists.
 2. **Deterministic Conflict Handling**: Concurrent requests with identical `(project_id, idempotency_key)` are resolved atomically using PostgreSQL `ON CONFLICT (project_id, idempotency_key) DO NOTHING`. The concurrent request selects the existing committed event and returns `HTTP 202` without triggering duplicate outbox records or constraint violations.
 3. **Safe Outbox Claiming**: The worker polls pending outbox records using:
+
    ```sql
    WITH candidates AS (
      SELECT id FROM outbox_records
@@ -56,7 +57,11 @@ To prevent dual-write inconsistencies between PostgreSQL and message brokers (e.
    FROM candidates WHERE outbox_records.id = candidates.id
    RETURNING outbox_records.*;
    ```
-   Claim and status change happen in one statement, so multiple worker instances never claim the same record, without table-level locking. Records stuck in `PROCESSING` (worker crashed) or `FAILED` (retryable) are reclaimed after `OUTBOX_LOCK_TIMEOUT_MS`.
+
+   Claim and status change happen in one statement, so multiple worker instances never claim the same record, without table-level locking. Records stuck in `PROCESSING` (worker crashed) or `FAILED` (retryable) are reclaimed after a fixed 5 minutes (`claimTimeoutMinutes` in `outbox-poller.service.ts`). The `OUTBOX_LOCK_TIMEOUT_MS` setting exists in the config schema but the poller does not read it.
+
+   **Poll cadence and backlog.** The poller wakes every `OUTBOX_POLL_INTERVAL_MS` (default 1000) and claims up to `OUTBOX_BATCH_SIZE` records (default 50). If a batch comes back full it claims again immediately, up to 20 batches per wake-up, and stops at the first short batch. A failing record cannot be picked up again by that loop, because a `FAILED` record is only claimable after the 5 minutes above. Fan-out inside a batch is serial (about 6-7 ms per record on a local stack, roughly five database and Redis round trips each), so one worker fans out about 150 events per second at most (derived from that per-record time, not measured end to end); ingestion is faster than that, so a sustained burst builds a backlog and delivery latency grows while nothing is lost. Measured locally: a 50-event burst queued behind 300 earlier events took 5.4-5.8 s before the drain loop and 0.8 s after it; with no backlog, an event is delivered in about 1 s (one poll tick plus fan-out).
+
 4. **Fan-Out to Subscriptions**: For each outbox record, the poller matches active subscriptions by event type pattern (`order.*`, `*`, exact match) and inserts initial `deliveries` records in state `PENDING`.
 5. **Terminal Outbox State**: If outbox processing encounters persistent unexpected failures, records transition to `DEAD_LETTER` after 10 consecutive attempts, incrementing `eventforge_outbox_dead_letter_total`.
 

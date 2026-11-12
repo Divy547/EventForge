@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 nearly complete; only the credit burn rate remains; CI is green after the flaky-test fix)_
+_Last updated: 2026-11-12 (Phase 4 started: task 1, the local load test, is done; Phase 3 only lacks the credit burn rate)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -12,6 +12,9 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 the stack is live at `https://40-81-24-8.sslip.io`, the fallback doc is written, automatic deploys from CI work, the
 Phase 3 details are archived (task 8), and CI is green after the flaky-test fix (runs `43285625950`, `43287724411`). **Remaining:** record
 the credit burn rate (waits on Azure Cost Management data).
+
+Phase 4 (portfolio polish) is **in progress**: task 1 (load test, run locally) is done and led to a worker fix
+(`e0f9600`); tasks 2-5 are not started.
 
 ---
 
@@ -47,17 +50,18 @@ the credit burn rate (waits on Azure Cost Management data).
 | Subscription rate limit         | **Enforce** `rateLimitPerSecond` in the worker (decided during Phase 1) rather than removing the field.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Prod smoke test                 | **HTTP-only** `pnpm smoke-test:remote` for prod-configured stacks (decided during Phase 1). Delivery stays covered by `pnpm smoke-test`.                                                                                                                                                                                                                                                                                                                                                                            |
 
-## 3. Baseline after Phase 3 (2026-11-12)
+## 3. Baseline (2026-11-12, after Phase 4 task 1)
 
 | Check                                     | Result                                                                         |
 | :---------------------------------------- | :----------------------------------------------------------------------------- |
 | `pnpm typecheck`, `lint`, `format:check`  | ✅ Clean                                                                       |
-| `pnpm test:unit`                          | ✅ 200/200 (API 74, worker 31, dashboard 95)                                   |
+| `pnpm test:unit`                          | ✅ 208/208 (API 74, worker 39, dashboard 95)                                   |
 | `pnpm test:integration` (real PG + Redis) | ✅ 91/91 (API 76, worker 15)                                                   |
 | `pnpm smoke-test:remote`                  | ✅ 28/28 against the public URL `https://40-81-24-8.sslip.io` (Phase 3 task 5) |
 
-Gates re-run on 2026-11-12 after Phase 3 (typecheck was served from the Turbo cache; the unit and integration suites were
-forced to run); the counts are unchanged from Phase 2. The Phase 1 baseline is in `docs/plan-archive.md`.
+Gates re-run on 2026-11-12 after Phase 4 task 1 (typecheck was served from the Turbo cache): the worker gained 8 unit tests
+for the outbox drain loop, so unit tests went from 200 to 208; integration counts are unchanged. The Phase 1 baseline is in
+`docs/plan-archive.md`.
 
 ## 4. Phases
 
@@ -150,21 +154,62 @@ stops newer pushes from cancelling runs on `main`.
 - The credit lasts about 6 months; when it ends the VM stops and the fallback guide keeps the demo available.
 - Every push to `main` that passes CI redeploys the server while the `DEPLOY_URL` variable exists (delete it to turn CD off).
   A deploy that does not become healthy fails the job but does not roll back.
-- For the Phase 4 load test, resize the VM temporarily to B2als_v2 so the burstable CPU is not throttled.
 
 ---
 
 ### Phase 4 — Portfolio Polish & Interview Readiness
 
+**Status: 🔄 In progress (started 2026-11-12).** Task 1 is done; tasks 2-5 are not started and each needs "start with
+task N".
+
 **Tasks**
 
-1. Run `pnpm load-test` against the deployed instance; record throughput and p50/p95/p99 latency.
+1. ✅ **Load test, run locally** (decided 2026-11-12: no run against the deployed instance, see the note below).
+   Findings and numbers are under "Task 1 results". It also produced a worker fix, `e0f9600`.
 2. README: live demo link, demo GIF/video, measured numbers, "Design Decisions" section (outbox vs
    direct publish, `SKIP LOCKED`, at-least-once vs exactly-once, lease-based crash recovery,
    SSRF/DNS-rebinding defence, backoff with jitter).
-3. Replace unverifiable marketing language ("production-grade") with measured facts.
+3. Replace unverifiable marketing language ("production-grade") with measured facts. Known targets: `README.md:3` and
+   `docs/architecture.md:3` ("production-grade", "high availability"; a single VM is not highly available), plus the
+   "zero message loss" wording. Also fix or remove the unused `OUTBOX_LOCK_TIMEOUT_MS` setting (see task 1 results).
 4. Concept walkthrough and Q&A practice covering every major component.
 5. Draft resume bullet points based on measured results.
+
+**Why the load test is local only.** `scripts/load-test.ts` writes its project and key straight into Postgres, runs its own
+webhook receiver on `127.0.0.1` and sets `ALLOW_LOCAL_WEBHOOKS`, so it cannot run against the public instance as written.
+A remote mode would only measure the internet path to East Asia plus a throttled 1 GiB burstable VM, and would risk
+the public demo. The live instance is covered by `pnpm smoke-test:remote` (28/28) instead. Do not quote local numbers as
+deployed numbers.
+
+**Task 1 results** (2026-11-12). Hardware: Intel i5-12450HX (6 CPUs visible to WSL2), 6.9 GB RAM, Node 24.19; API and
+worker as plain Node processes, dev Postgres and Redis in Docker on the same machine. Default settings (batch 50, poll 1 s,
+worker concurrency 10). Seven runs; ranges are min-max across runs. Scenario 2 is only about 0.4 s of traffic, so tail
+percentiles rest on 200 requests.
+
+| Scenario                                          | Result                                                                 |
+| :------------------------------------------------ | :--------------------------------------------------------------------- |
+| 1. Sequential ingestion, 50 requests              | 147-159 req/s, p50 5.5-5.8 ms, p99 22.7-29.6 ms                        |
+| 2. Concurrent ingestion, 200 requests, 20 conc.   | 441-544 req/s, p50 32.5-34.6 ms, p95 71-139 ms, p99 96-181 ms          |
+| 3. 50 parallel requests, same idempotency key     | 50 of 50 accepted with 202, 0 constraint violations (every run)        |
+| 4. Delivery of 50 events (after 300 earlier ones) | 5.4-5.8 s before the fix; **0.80 s** after (three runs)                |
+| 5. Endpoint fails once, then recovers             | delivered on the 2nd attempt in 1.0-1.8 s, including the backoff delay |
+
+**What was found.** The old "9 deliveries/s" in scenario 4 was backlog, not delivery throughput. The outbox poller claimed
+one batch per poll tick, a fixed ceiling of about 50 events/s per worker, while ingestion accepts 440-520 req/s, so the 300
+events from scenarios 1-3 were still draining when scenario 4 started. Timeline from database timestamps: a 50-event
+burst alone takes 1.0-1.2 s (about 0.8 s waiting for the next tick, then about 7 ms per record of serial fan-out); behind a
+300-event backlog it took 6.4 s; with `OUTBOX_BATCH_SIZE=500` 1.5 s. The fix (`e0f9600`) re-polls immediately while
+batches are full. The webhook calls themselves are not the limit: attempts finish within tens of milliseconds of being
+enqueued.
+
+**Quoting rules.** The scenario 4 figure the script now prints (about 62 deliveries/s) is a latency, not a throughput: it is
+50 events over a drain time that is mostly the wait for the next poll tick. Quote "a 50-event burst, including a backlog,
+is fully delivered in under a second" and the ingestion numbers. The sustained fan-out ceiling is estimated at about 150
+events/s per worker (serial, 6-7 ms per record) but has **not** been measured after the fix.
+
+**Finding for task 3.** `OUTBOX_LOCK_TIMEOUT_MS` (default 30000) is defined in `packages/config/src/schema.ts` and exposed by
+the worker config, but the poller ignores it and passes a fixed `claimTimeoutMinutes: 5`. `docs/architecture.md` claimed the
+setting controls reclaiming; it now states the fixed 5 minutes. Decide in task 3 whether to wire the setting or remove it.
 
 **Acceptance criteria**
 
