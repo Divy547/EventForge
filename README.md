@@ -1,360 +1,181 @@
 # EventForge
 
-EventForge is a production-grade, reliable event-processing and webhook delivery platform built as a modular monolith with separate API and background worker runtimes.
+EventForge is a webhook delivery service. An application sends one event to the API, and EventForge delivers it to
+every subscribed endpoint: signed, retried with backoff, dead-lettered when it keeps failing, and replayable from a
+dashboard. Built with NestJS, PostgreSQL, Redis (BullMQ) and a React dashboard.
 
----
+## Live demo
 
-## System Architecture & Highlights
+**https://40-81-24-8.sslip.io/dashboard/**: open it and click **Try the live sandbox**. You get a one-hour key, send an
+event to a built-in demo receiver, and watch it succeed, retry, dead-letter and replay. No account needed. The
+interactive API reference is at [`/docs`](https://40-81-24-8.sslip.io/docs).
 
-- **Transactional Outbox Pattern**: Ingests events and outbox records in a single atomic PostgreSQL transaction. Guarantees zero message loss without dual-write race conditions.
-- **Atomic Idempotency**: Resolves concurrent duplicate requests with `ON CONFLICT (project_id, idempotency_key) DO NOTHING`, returning HTTP 202 without constraint violations.
-- **At-Least-Once Delivery**: Outbox dispatcher fans out events to matching subscriptions. Worker claims jobs using `FOR UPDATE SKIP LOCKED` and dispatches webhooks via Redis/BullMQ.
-- **Exponential Backoff & Jitter**: Automatically retries transient failures (5xx, 429 with `Retry-After`, network timeouts) with exponential backoff and randomized full jitter.
-- **Dead-Letter Queue (DLQ) & Atomic Replay**: Exhausted or non-retryable deliveries transition to `DEAD_LETTER`. Single and batch replay endpoints safely reset state to `PENDING` with increased attempt headroom while preserving audit history.
-- **SSRF & DNS-Rebinding Protection**: Validates target URLs at subscription time and performs socket-level IP address verification at connection time before sending payloads.
-- **Consumer SDK (`@eventforge/sdk`)**: Lightweight TypeScript SDK for downstream webhook receivers, featuring constant-time HMAC-SHA256 verification, replay attack tolerance, and in-memory idempotency deduplication.
-- **W3C Distributed Tracing**: Full end-to-end trace propagation (`traceparent`) from API ingestion through PostgreSQL outbox and BullMQ to outbound HTTP webhook headers.
-- **API Protection**: Redis-backed rate limiting per API key and per IP (`429` + `Retry-After`), `helmet` headers, an explicit CORS allow-list, and a token-protected `/metrics`.
-- **Per-Subscription Throttling**: `rateLimitPerSecond` is enforced in the worker without consuming retry attempts.
-- **Data Retention**: a worker job deletes completed deliveries and processed events after `RETENTION_DAYS`, never touching unfinished or dead-lettered work.
-- **Tenant Admin CLI**: create projects, and create, list, revoke and rotate API keys.
-- **Web Dashboard**: a React app served by the API at `/dashboard` (no extra container). Sign in with an API key to see delivery health, browse events and deliveries with their attempts, manage subscriptions and replay dead letters. Light and dark theme, usable at phone width, no third-party requests.
-- **Live Sandbox (optional)**: with `SANDBOX_ENABLED=true`, a visitor can get a one-hour key and send an event to a built-in demo receiver, then watch it retry, dead-letter and replay, with no account.
-- **Full Observability**: Prometheus metrics at `/v1/metrics`, structured JSON logging with automated redaction of sensitive credentials, and container readiness probes.
-- **Production Containerization**: Multi-stage Dockerfiles (`node:24-alpine`) with non-root runtime users (`node`), a one-off `migrate` service that runs before the API and worker, and a standalone production Docker Compose file. Measured image size: ~73 MB gzip-compressed / ~369 MB on disk (see `docs/deployment.md`).
+It runs on one small Azure for Students VM (1 GiB RAM) and every visitor shares one sandbox project, so you may see other
+people's events. The VM runs on a student credit that lasts a few months; if the link is down, run it locally below.
 
----
-
-## Monorepo Layout
+## How it works
 
 ```text
-EventForge/
-├── apps/
-│   ├── api/                   # NestJS REST API (ingestion, tenant auth, DLQ replay, stats, sandbox, Swagger)
-│   ├── dashboard/             # React + Vite web dashboard (built, then served by the API at /dashboard)
-│   └── worker/                # NestJS background worker (polling outbox, BullMQ, delivery)
-├── packages/
-│   ├── common/                # Domain types, HMAC crypto, SSRF validation, W3C tracing, logger
-│   ├── config/                # Validated environment schemas & production security guardrails
-│   ├── database/              # Drizzle ORM schema, migrations, connection pool, transactions
-│   ├── sdk/                   # Official consumer webhook verification & deduplication SDK
-│   └── typescript-config/     # Strict shared tsconfig inheritance bases
-├── docs/
-│   ├── architecture.md        # In-depth architectural semantics, lifecycle state machines
-│   ├── deployment.md          # Production deployment, Docker, migrations, backup & restore
-│   └── observability.md       # Metrics catalog, logging schemas, and alerting thresholds
-├── scripts/
-│   ├── demo.ts                # Autonomous end-to-end verification & lifecycle demonstration
-│   ├── load-test.ts           # 5-scenario reproducible load testing harness & benchmarking
-│   ├── smoke-test.ts          # 11-step production deployment smoke test
-│   └── smoke-test-remote.ts   # HTTP-only smoke test of a running stack (API, stats, dashboard, sandbox)
-├── docker-compose.yml         # Local development Compose (PostgreSQL 16 & Redis 7)
-├── docker-compose.prod.yml    # Production Compose (API, Worker, Private PostgreSQL & Redis)
-├── .env.example               # Development environment template
-├── .env.production.example    # Production environment template with security guidelines
-├── .github/workflows/ci.yml   # Complete CI/CD pipeline (lint, typecheck, tests, docker builds)
-├── package.json               # Root scripts & dev tooling
-├── pnpm-workspace.yaml        # Workspace membership definition
-└── turbo.json                 # Turborepo task pipeline & caching rules
+ your app ──POST /v1/events──▶ API ──one transaction──▶ PostgreSQL: event + outbox row
+                                                              │
+                          worker polls outbox (FOR UPDATE SKIP LOCKED)
+                                                              ▼
+                          one delivery per matching subscription ──▶ BullMQ (Redis)
+                                                              │
+                          signed HTTPS POST to the subscriber's endpoint
+                                │ success                     │ failure
+                                ▼                             ▼
+                            COMPLETED        retry with backoff ─▶ DEAD_LETTER ─▶ replay
 ```
 
----
+The API and the worker are separate processes. Accepting an event needs only PostgreSQL, so the API keeps accepting events while the
+worker is down; the worker catches up when it returns.
 
-## Prerequisites
+## Features
 
-- **Node.js**: `v24.19.0` (or `>= 24.0.0`)
-- **pnpm**: `11.21.0` (or `>= 11.0.0`)
-- **Docker & Docker Compose**: Docker Engine 24+ and Compose v2+
+- Event ingestion with idempotency keys, per-project API keys, and rate limits (per key and per IP).
+- Subscriptions with event-type patterns (`order.*`), HMAC-signed payloads, and an optional per-subscription rate limit.
+- Retries with exponential backoff and jitter, a dead-letter state, and single or batch replay.
+- SSRF protection on subscription URLs and again when connecting.
+- `@eventforge/sdk` for receivers: signature verification with timestamp tolerance, plus an in-memory deduplication store.
+- Web dashboard served by the API at `/dashboard`: delivery health, events and deliveries with every attempt, subscriptions,
+  dead-letter replay, light and dark theme.
+- Prometheus metrics, structured JSON logs with secret redaction, a data-retention job, and an admin CLI for projects and keys.
+- Docker images built and published by CI, with automatic deploy to the demo VM after a green run.
 
----
+## Design decisions
 
-## Quick Start (Local Development)
+**Transactional outbox instead of publishing directly.** The API writes the event and an outbox row in one PostgreSQL
+transaction (`insertEventWithOutbox`). Publishing to a queue from the request handler would be a dual write: a crash
+between the two writes loses the event or sends a phantom. With the outbox, an accepted event is always durable, and the
+worker turns it into deliveries afterwards. The cost is latency: delivery starts at the next poll (about 1 s).
 
-### 1. Configure Environment
+**Idempotent ingestion in the database.** A client-supplied `idempotencyKey` is enforced with
+`INSERT ... ON CONFLICT (project_id, idempotency_key) DO NOTHING`, so concurrent retries of the same request cannot create
+two events, and the loser gets the existing event back with `202`. There is no check-then-insert race to get wrong.
+
+**`FOR UPDATE SKIP LOCKED` to claim work.** Workers claim outbox rows with one `UPDATE ... FROM (SELECT ... FOR UPDATE SKIP
+LOCKED)` statement, so several workers can run without blocking each other or claiming the same row.
+
+**At-least-once delivery, not exactly-once.** A worker can send a webhook and die before recording the result, and the
+delivery is then retried. Exactly-once over HTTP is not achievable, so the contract is: every event is delivered at least
+once, and receivers deduplicate on the event or delivery ID (sent as `X-EventForge-Event-Id` and `X-EventForge-Delivery-Id`;
+the SDK has a helper for it).
+
+**Lease-based crash recovery.** A worker claims a delivery by moving it to `IN_FLIGHT`. A recovery job (every 30 s by
+default) finds `IN_FLIGHT` deliveries older than the lease (60 s by default), records a `WORKER_CRASHED` attempt, and
+makes them eligible again. This is what makes the at-least-once guarantee hold through a crash.
+
+**Retry classification and backoff.** Retried: 5xx, 429, timeouts and connection errors. Not retried (straight to
+`DEAD_LETTER`): other 4xx, and blocked or invalid URLs. The delay is `random(0, min(24h, 1s × 2^(attempt-1)))` (full
+jitter, so retries from many failures do not arrive in lockstep), or the `Retry-After` header when the endpoint sends
+one. The default is 5 attempts per delivery; replay grants more.
+
+**HMAC signatures with a timestamp.** Each delivery carries `X-EventForge-Signature: t=<unix>,v1=<hex>`, where the value
+is HMAC-SHA256 over `<timestamp>.<raw body>` with the subscription's secret. The timestamp lets receivers reject replayed
+requests; the SDK compares in constant time. The signing secret is shown once, when the subscription is created.
+
+**SSRF defence at two points.** Subscription URLs are validated when created (`apps/api/src/common/utils/ssrf-validator.ts`).
+At delivery time the worker resolves DNS with a custom lookup that rejects private and reserved addresses, and checks the
+address of the connected socket again, so a hostname that resolves to a public IP at validation and a private IP later
+(DNS rebinding) is still blocked.
+
+**Known limit: fan-out rate.** One worker turns outbox rows into deliveries serially, at about 6-7 ms per record, and
+claims 50 per poll (it keeps polling while batches come back full). Ingestion is faster than that, so a sustained burst
+builds a backlog and delivery latency grows; nothing is lost. More workers or a larger `OUTBOX_BATCH_SIZE` raise the
+ceiling. Details in [`docs/architecture.md`](docs/architecture.md).
+
+## Performance
+
+Measured with `pnpm load-test` on a development laptop (Intel i5-12450HX, 6 CPUs visible to WSL2, 6.9 GB RAM, Node 24),
+with the API, worker, PostgreSQL and Redis all on the same machine and default settings. Ranges are min-max over seven
+runs. **These are local numbers, not numbers for the live demo VM**, which is far smaller.
+
+| What                                                                | Result                                        |
+| :------------------------------------------------------------------ | :-------------------------------------------- |
+| Event ingestion, sequential (50 requests)                           | 147-159 req/s, p50 5.5-5.8 ms, p99 23-30 ms   |
+| Event ingestion, 20 concurrent clients (200 requests)               | 441-544 req/s, p50 32-35 ms, p99 96-181 ms    |
+| 50 parallel requests with the same idempotency key                  | 50 of 50 accepted, 0 constraint violations    |
+| 50-event burst delivered while 300 earlier events were still queued | 0.8 s until the last webhook arrived (3 runs) |
+| Endpoint fails once, then recovers                                  | delivered on the second attempt in 1.0-1.8 s  |
+
+The 200-request run lasts under half a second, so its tail percentiles come from a small sample. Delivery latency here is
+mostly the wait for the next poll tick, not webhook throughput. The test suite has 208 unit and 91 integration tests
+(real PostgreSQL and Redis), run in CI.
+
+## Run it locally
+
+Needs Node 24+, pnpm 11+ and Docker.
 
 ```bash
 cp .env.example .env
+pnpm install
+pnpm docker:up                 # PostgreSQL and Redis
+pnpm db:migrate && pnpm db:seed
+pnpm build                     # the API serves the built dashboard
+pnpm dev:api                   # terminal 1, port 3000
+pnpm dev:worker                # terminal 2, port 3001
+pnpm demo                      # sends events through the whole pipeline and prints each step
 ```
 
-### 2. Start PostgreSQL & Redis
+Then open http://localhost:3000/dashboard/ and sign in with the API key that `pnpm db:seed` printed (project `default`).
+More keys: `pnpm admin key:create --project default --name <name>`. The dashboard keeps the key in the browser's session
+storage and sends it as `X-API-Key`.
 
-```bash
-pnpm docker:up
-```
+To enable the sandbox button locally, set `SANDBOX_ENABLED=true` and `SANDBOX_RECEIVER_URL` (see `.env.example`).
 
-### 3. Apply Migrations & Seed Data
+## Using the API
 
-```bash
-pnpm db:migrate
-pnpm db:seed
-```
-
-### 4. Run Development Servers
-
-```bash
-# Terminal 1: REST API Application (Port 3000)
-pnpm dev:api
-
-# Terminal 2: Background Worker Application (Port 3001)
-pnpm dev:worker
-```
-
-### 5. Run the Automated Demo
-
-```bash
-pnpm demo
-```
-
-### 6. Open the Dashboard
-
-```bash
-pnpm build    # once, and after dashboard changes: the API serves the built bundle
-pnpm dev:api  # then open http://localhost:3000/dashboard/ and sign in with an API key
-```
-
-For hot reload while editing the dashboard, run `pnpm --filter @eventforge/dashboard dev` (port 5173, opens at `/dashboard/`). It proxies `/v1` to the API at `http://localhost:3000` (override with `API_URL`).
-
-Create a key with `pnpm admin key:create --project <slug> --name <name>`. The key stays in the browser's session storage only and is sent as `X-API-Key`; closing the tab signs you out.
-
-**Sandbox mode** lets visitors try the product without a key. Set `SANDBOX_ENABLED=true` and `SANDBOX_RECEIVER_URL` (see `.env.example`), run the API and worker, and the landing page shows a "Try the live sandbox" button. It uses one shared `sandbox` project, a built-in demo receiver and per-IP rate limits.
-
----
-
-## Production Deployment
-
-### 1. Production Docker Images
-
-Build minimal, multi-stage production images with non-root runtime users:
-
-```bash
-# Build API image
-docker build -f apps/api/Dockerfile -t eventforge-api:latest .
-
-# Build Worker image
-docker build -f apps/worker/Dockerfile -t eventforge-worker:latest .
-```
-
-### 2. Production Docker Compose
-
-EventForge provides a production-hardened compose specification in `docker-compose.prod.yml`:
-
-- Keeps database, Redis and worker ports private inside `eventforge_prod_net`; only the API port is published.
-- Requires `POSTGRES_PASSWORD` (refuses to start without it) and protects API `/metrics` with `METRICS_TOKEN`.
-- Runs a one-off `migrate` service first; `api` and `worker` start only after it succeeds.
-- Rejects insecure settings (`ALLOW_LOCAL_WEBHOOKS=false` enforced).
-
-```bash
-# 1. Setup production environment (.env.production is git-ignored)
-cp .env.production.example .env.production
-# Edit .env.production: set POSTGRES_PASSWORD (openssl rand -hex 24) and METRICS_TOKEN
-
-# 2. Launch production stack (migrations are applied automatically)
-pnpm docker:prod:up
-
-# 3. Create your first project and API key (printed once)
-docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
-  node packages/database/dist/scripts/admin.js project:create --name "Acme" --slug acme
-docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
-  node packages/database/dist/scripts/admin.js key:create --project acme --name "prod"
-```
-
-For complete backup, restore, rotation, and scaling procedures, see [`docs/deployment.md`](docs/deployment.md).
-
----
-
-## Workspace Commands
-
-All workspace commands are orchestrated through Turborepo from the root:
-
-| Command                  | Description                                                     |
-| :----------------------- | :-------------------------------------------------------------- |
-| `pnpm build`             | Compile all packages and applications in topological order      |
-| `pnpm dev`               | Run development servers in watch mode with streaming logs       |
-| `pnpm dev:api`           | Start NestJS API in hot-reload development mode                 |
-| `pnpm dev:worker`        | Start NestJS Background Worker in hot-reload mode               |
-| `pnpm start:api`         | Start compiled NestJS API production server                     |
-| `pnpm start:worker`      | Start compiled NestJS Background Worker production server       |
-| `pnpm lint`              | Run ESLint across all workspace files                           |
-| `pnpm lint:fix`          | Automatically fix ESLint warnings and errors                    |
-| `pnpm typecheck`         | Run TypeScript typechecking across all workspace packages       |
-| `pnpm test`              | Run all test suites across all packages                         |
-| `pnpm test:unit`         | Run fast isolated unit tests                                    |
-| `pnpm test:integration`  | Run database integration tests against real PostgreSQL & Redis  |
-| `pnpm format:check`      | Verify formatting with Prettier                                 |
-| `pnpm format:write`      | Format codebase with Prettier                                   |
-| `pnpm demo`              | Run automated end-to-end lifecycle demonstration                |
-| `pnpm load-test`         | Run 5-scenario performance baseline & load test                 |
-| `pnpm smoke-test`        | Run 11-step smoke test (spawns the built API/worker locally)    |
-| `pnpm smoke-test:remote` | HTTP-only smoke test (API, stats, dashboard) of a running stack |
-| `pnpm db:migrate`        | Execute pending SQL migrations against PostgreSQL               |
-| `pnpm db:migrate:prod`   | Run the compiled migration runner against `DATABASE_URL`        |
-| `pnpm admin <cmd>`       | Admin CLI: `project:create`, `key:create/list/revoke/rotate`    |
-| `pnpm db:seed`           | Populate database with demo project, API key, and subscription  |
-| `pnpm db:verify`         | Run database and outbox verification script                     |
-| `pnpm docker:up`         | Start local PostgreSQL and Redis containers                     |
-| `pnpm docker:down`       | Stop local development containers                               |
-| `pnpm docker:prod:up`    | Build and start full production Docker Compose stack            |
-| `pnpm docker:prod:down`  | Stop production Docker Compose stack                            |
-
----
-
-## API & Consumer SDK Usage
-
-### Authentication
-
-Pass the project API key in the `X-API-Key` header:
-
-```http
-X-API-Key: ef_live_YOUR_API_KEY
-```
-
-### 1. Ingest Event
-
-```bash
-curl -X POST http://localhost:3000/v1/events \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ef_live_YOUR_KEY" \
-  -d '{
-    "eventType": "order.completed",
-    "source": "storefront.checkout",
-    "payload": { "orderId": "ord_1001", "amount": 149.50 },
-    "idempotencyKey": "order-1001-charge"
-  }'
-```
-
-Response: `HTTP 202 Accepted`
-
-```json
-{
-  "id": "a40ca791-904b-43e5-9d62-db6c14df8483",
-  "eventType": "order.completed",
-  "status": "ACCEPTED",
-  "idempotencyKey": "order-1001-charge",
-  "createdAt": "2026-10-30T08:00:00.000Z"
-}
-```
-
-### 2. Register Webhook Subscription
+Send an event and register a webhook (full reference in Swagger at `/docs`):
 
 ```bash
 curl -X POST http://localhost:3000/v1/subscriptions \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ef_live_YOUR_KEY" \
-  -d '{
-    "name": "Order Fulfillment Receiver",
-    "targetUrl": "https://api.mycompany.com/webhooks/orders",
-    "eventTypes": ["order.*"]
-  }'
+  -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
+  -d '{ "name": "Orders", "targetUrl": "https://example.com/webhooks", "eventTypes": ["order.*"] }'
+# the response contains "signingSecret" (shown once; save it)
+
+curl -X POST http://localhost:3000/v1/events \
+  -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
+  -d '{ "eventType": "order.completed", "source": "checkout", "payload": { "orderId": "ord_1001" },
+        "idempotencyKey": "order-1001" }'
+# HTTP 202 Accepted
 ```
 
-Response: `HTTP 201 Created`
-
-```json
-{
-  "id": "2087ddbb-7eac-4692-a996-ab63642724bf",
-  "name": "Order Fulfillment Receiver",
-  "targetUrl": "https://api.mycompany.com/webhooks/orders",
-  "eventTypes": ["order.*"],
-  "isActive": true,
-  "signingSecret": "whsec_34f9a0b1c2d3..."
-}
-```
-
-The `signingSecret` is returned **only in this creation response**. Save it now: `GET /v1/subscriptions`,
-`GET /v1/subscriptions/:id` and `PATCH /v1/subscriptions/:id` never return it, and it cannot be changed or
-retrieved afterwards (to get a new one, create a new subscription).
-
-### 3. Inspect & Replay Dead-Letter Deliveries
-
-```bash
-# Query dead-letter deliveries
-curl -H "X-API-Key: ef_live_YOUR_KEY" "http://localhost:3000/v1/deliveries?status=DEAD_LETTER"
-
-# Replay a specific dead-letter delivery
-curl -X POST http://localhost:3000/v1/deliveries/014a58f0-06be-4468-9795-33a318f8be21/replay \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ef_live_YOUR_KEY" \
-  -d '{ "additionalAttempts": 3 }'
-
-# Batch replay up to 100 dead-letter deliveries
-curl -X POST http://localhost:3000/v1/deliveries/replay \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ef_live_YOUR_KEY" \
-  -d '{
-    "deliveryIds": ["014a58f0-06be-4468-9795-33a318f8be21"],
-    "additionalAttempts": 3
-  }'
-```
-
-### 4. Consumer Verification with `@eventforge/sdk`
-
-Downstream consumers can use the official `@eventforge/sdk` package for signature verification and idempotency deduplication:
+Verify a delivery in your receiver with the SDK (the raw request body must be passed unparsed):
 
 ```typescript
-import express from 'express';
-import { EventForgeWebhook, MemoryIdempotencyStore } from '@eventforge/sdk';
+import { EventForgeWebhook } from '@eventforge/sdk';
 
-const app = express();
-const idempotencyStore = new MemoryIdempotencyStore({ ttlSeconds: 86400 });
-
-// Ensure raw body is preserved for signature verification
-app.use(express.raw({ type: 'application/json' }));
-
-app.post('/webhook', (req, res) => {
-  const signature = req.headers['x-eventforge-signature'] as string;
-  const rawBody = req.body.toString('utf8');
-
-  try {
-    const event = EventForgeWebhook.constructEvent({
-      payload: rawBody,
-      signatureHeader: signature,
-      secret: process.env.WEBHOOK_SECRET!,
-      toleranceSeconds: 300, // 5-minute clock-skew tolerance
-    });
-
-    // Idempotency check: prevent processing duplicate deliveries
-    if (idempotencyStore.has(event.id)) {
-      return res.status(200).json({ status: 'already_processed' });
-    }
-
-    // Process event
-    console.log(`Processing event ${event.id}:`, event.payload);
-    idempotencyStore.set(event.id);
-
-    return res.status(200).json({ received: true });
-  } catch (err) {
-    return res.status(400).json({ error: 'Invalid webhook signature' });
-  }
+const event = EventForgeWebhook.constructEvent({
+  payload: rawBody,
+  signatureHeader: req.headers['x-eventforge-signature'] as string,
+  secret: process.env.WEBHOOK_SECRET!,
+  toleranceSeconds: 300,
 });
 ```
 
----
+## Development
 
-## Load Testing & Performance Baseline
+| Command                       | What it does                                                         |
+| :---------------------------- | :------------------------------------------------------------------- |
+| `pnpm typecheck`, `pnpm lint` | Type check and lint every package                                    |
+| `pnpm test:unit`              | Unit tests                                                           |
+| `pnpm test:integration`       | Integration tests against real PostgreSQL and Redis                  |
+| `pnpm load-test`              | The five load scenarios above (needs `pnpm docker:up`)               |
+| `pnpm smoke-test`             | End-to-end check that starts the built API and worker                |
+| `pnpm smoke-test:remote`      | HTTP-only check of a running stack (set `API_URL`)                   |
+| `pnpm admin <cmd>`            | Projects and keys: `project:create`, `key:create/list/revoke/rotate` |
 
-EventForge includes a configurable load-testing suite in `scripts/load-test.ts` testing 5 scenarios:
-
-1. **Normal Sequential Baseline**: Single-thread throughput and latency baseline.
-2. **Concurrent Ingestion**: High-concurrency publication with unique idempotency keys.
-3. **Concurrent Duplicate Ingestion**: Parallel requests with identical idempotency keys testing atomic `ON CONFLICT DO NOTHING`.
-4. **Webhook Delivery Under Worker Concurrency**: Measures end-to-end worker delivery pipeline latency and throughput.
-5. **Temporary Endpoint Failure & Recovery**: Simulates 500 server errors, verifies BullMQ exponential retry progression and eventual success.
-
-### Running Load Tests
-
-```bash
-# Execute load test with default parameters (200 requests, 20 concurrency)
-pnpm load-test
-
-# Configurable parameters
-LOAD_TEST_REQUESTS=500 LOAD_TEST_CONCURRENCY=50 pnpm load-test
+```text
+apps/api         NestJS REST API (ingestion, auth, stats, replay, sandbox, Swagger)
+apps/worker      NestJS worker (outbox poller, BullMQ delivery, retries, retention)
+apps/dashboard   React + Vite dashboard, served by the API at /dashboard
+packages/        common (crypto, SSRF, tracing), config, database (Drizzle), sdk
 ```
 
----
+## More documentation
 
-## Documentation
-
-- **[What is EventForge? (Plain English Guide)](docs/README.md)**: Conceptual, non-technical explanation of the problem EventForge solves.
-- **[Architecture & Delivery Semantics](docs/architecture.md)**: Deep dive into the transactional outbox, state machines, and retry algorithms.
-- **[Production Deployment & Operations](docs/deployment.md)**: Container architecture, migrations, backup/restore, and scaling runbook.
-- **[Metrics, Logging & Observability](docs/observability.md)**: Complete metrics catalog, alert thresholds, and logging schemas.
+- [What is EventForge? (plain English)](docs/README.md)
+- [Architecture and delivery semantics](docs/architecture.md)
+- [Deployment and operations](docs/deployment.md), [Azure for Students guide](docs/deploy-azure-student.md), [local fallback behind a tunnel](docs/deploy-fallback.md)
+- [Metrics, logging and observability](docs/observability.md)
