@@ -2,9 +2,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { App } from './App';
+import { statsResponse } from './test/fixtures';
 
 function mockFetch(status: number) {
-  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(status === 200 ? statsResponse() : new Response('{}', { status })),
+    );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -32,7 +37,7 @@ describe('Landing and login', () => {
     render(<App />);
     await submitKey('  ef_live_abc  ');
 
-    expect(await screen.findByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       '/v1/stats?windowHours=1',
       expect.objectContaining({ headers: { 'X-API-Key': 'ef_live_abc' } }),
@@ -47,7 +52,7 @@ describe('Landing and login', () => {
     await submitKey('wrong');
 
     expect(await screen.findByRole('alert')).toHaveTextContent('was not accepted');
-    expect(screen.queryByRole('heading', { name: 'You are signed in' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Overview' })).not.toBeInTheDocument();
     expect(window.sessionStorage.length).toBe(0);
   });
 
@@ -80,7 +85,7 @@ describe('Landing and login', () => {
   it('skips the landing page when a key is already stored, and sign-out clears it', async () => {
     window.sessionStorage.setItem('eventforge.apiKey', 'ef_live_abc');
     render(<App />);
-    expect(screen.getByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(screen.getByLabelText('Project API key')).toBeInTheDocument());
@@ -95,7 +100,7 @@ describe('Landing and login', () => {
     render(<App />);
     await submitKey('ef_live_abc');
 
-    expect(await screen.findByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
     vi.restoreAllMocks();
   });
 });
