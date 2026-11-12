@@ -61,8 +61,6 @@ COPY --from=builder --chown=node:node /app/packages/database/package.json ./pack
 COPY --from=builder --chown=node:node /app/packages/database/dist ./packages/database/dist
 COPY --from=builder --chown=node:node /app/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder --chown=node:node /app/packages/database/migrations ./packages/database/migrations
-COPY --from=builder --chown=node:node /app/packages/sdk/package.json ./packages/sdk/package.json
-COPY --from=builder --chown=node:node /app/packages/sdk/dist ./packages/sdk/dist
 
 # Copy Worker app
 COPY --from=builder --chown=node:node /app/apps/worker/package.json ./apps/worker/package.json

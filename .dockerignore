@@ -1,8 +1,10 @@
-# Dependency & Build Artifacts
-node_modules
-dist
-.turbo
-coverage
+# Dependency & Build Artifacts. `**/` is needed: a bare `node_modules` or `dist` only matches at the
+# context root, so local per-package build output would leak into the image build and hide
+# errors that a clean CI checkout then hits.
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
 *.log
 
 # Git & IDE
