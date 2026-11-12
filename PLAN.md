@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phase 1 is **implemented and committed** (2026-11-12). Phase 2 is **approved and in
 progress**: task 1 (backend endpoints) is committed as `fc7dd20`; task 2 (dashboard scaffold) is committed as `43bff6a`;
-task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is implemented and **awaiting review, not yet committed**; task 10 is next, awaiting approval.
+task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. **Task 10 is next, awaiting approval.**
 
 ---
 
@@ -77,7 +77,7 @@ task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) 
 
 ### Phase 2 — Dashboard
 
-**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is implemented, uncommitted, awaiting review; tasks 10–12 have not been started.
+**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is committed as `450a0d8`; tasks 10–12 have not been started.
 
 **Existing API surface** (checked 2026-11-12): events (`POST`, `GET` list with `page`/`limit`, `GET :id`),
 deliveries (`GET` list, `GET :id` which already includes the attempts list, single and batch DLQ replay),
@@ -161,7 +161,7 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
    clear a rate limit once set, so the edit form can change it but not remove it. Custom `headers` are not editable in
    the UI (API-only). Throwaway project `t8-check` left in the local dev DB._
 9. **Dead-letter queue page**: single and batch replay.
-   _Done (uncommitted, awaiting review): `/dead-letters` (header link "Dead letters") lists DEAD_LETTER deliveries
+   _Done (`450a0d8`): `/dead-letters` (header link "Dead letters") lists DEAD_LETTER deliveries
    with subscription name (looked up from `/v1/subscriptions`; falls back to a short ID), attempts, when it gave up and
    links to the delivery and event. Each row has **Replay** (`POST /v1/deliveries/:id/replay`); checkboxes plus a
    select-all for the page feed **Replay selected (n)** (`POST /v1/deliveries/replay` with `deliveryIds`, so at most the
