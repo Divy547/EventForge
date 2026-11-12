@@ -37,10 +37,6 @@ export class WorkerConfigService {
     return this.config.OUTBOX_BATCH_SIZE;
   }
 
-  get outboxLockTimeoutMs(): number {
-    return this.config.OUTBOX_LOCK_TIMEOUT_MS;
-  }
-
   get workerConcurrency(): number {
     return this.config.WORKER_CONCURRENCY;
   }

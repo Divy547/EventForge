@@ -21,7 +21,6 @@ export const envSchema = z
 
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(50),
-    OUTBOX_LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 
     WORKER_CONCURRENCY: z.coerce.number().int().positive().default(10),
     WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
