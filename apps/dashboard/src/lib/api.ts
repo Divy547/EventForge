@@ -50,13 +50,14 @@ export interface Stats {
 }
 
 export type ApiFailure =
-  'unauthorized' | 'not-found' | 'rate-limited' | 'unreachable' | 'unexpected';
+  'unauthorized' | 'not-found' | 'conflict' | 'rate-limited' | 'unreachable' | 'unexpected';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; reason: ApiFailure };
 
 function failureForStatus(status: number): ApiFailure {
   if (status === 401) return 'unauthorized';
   if (status === 404) return 'not-found';
+  if (status === 409) return 'conflict';
   if (status === 429) return 'rate-limited';
   return 'unexpected';
 }
@@ -327,10 +328,39 @@ export function updateSubscription(
   return sendJson<Subscription>('PATCH', `/v1/subscriptions/${encodeURIComponent(id)}`, key, patch);
 }
 
+/** Mirrors `ReplaySingleResponseDto`. */
+export interface ReplayResult {
+  delivery: DeliverySummary;
+  replayed: boolean;
+  message: string;
+}
+
+/** Mirrors `ReplayBatchResponseDto`: one entry per requested delivery, success or not. */
+export interface BatchReplayResult {
+  totalRequested: number;
+  replayedCount: number;
+  failedCount: number;
+  items: { deliveryId: string; success: boolean; status?: string; error?: string }[];
+}
+
+/** Moves one dead-letter delivery back to PENDING with fresh attempts (API default: 3 more). */
+export function replayDelivery(key: string, id: string): Promise<MutationResult<ReplayResult>> {
+  return sendJson<ReplayResult>('POST', `/v1/deliveries/${encodeURIComponent(id)}/replay`, key, {});
+}
+
+/** The API accepts at most 50 IDs per request; the page lists 20, so one call covers a page. */
+export function replayDeliveries(
+  key: string,
+  deliveryIds: string[],
+): Promise<MutationResult<BatchReplayResult>> {
+  return sendJson<BatchReplayResult>('POST', '/v1/deliveries/replay', key, { deliveryIds });
+}
+
 /** Visitor-facing wording for every failure a page can hit. */
 export const FAILURE_MESSAGES: Record<ApiFailure, string> = {
   unauthorized: 'Your API key was not accepted. Sign in again.',
   'not-found': 'That item does not exist in this project.',
+  conflict: 'That delivery is no longer a dead letter. Refresh the list.',
   'rate-limited': 'Too many requests. Wait a moment and refresh.',
   unreachable: 'Could not reach the API. Check your connection and refresh.',
   unexpected: 'The API returned an unexpected response. Try again shortly.',

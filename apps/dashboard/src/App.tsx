@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { Landing } from '@/pages/Landing';
 import { DeliveryDetail } from '@/pages/DeliveryDetail';
+import { DeadLetters } from '@/pages/DeadLetters';
 import { Deliveries } from '@/pages/Deliveries';
 import { EventDetail } from '@/pages/EventDetail';
 import { Events } from '@/pages/Events';
@@ -41,6 +42,7 @@ export function App() {
         path="/deliveries/:id"
         element={<DeliveryDetail apiKey={apiKey} onSignOut={signOut} />}
       />
+      <Route path="/dead-letters" element={<DeadLetters apiKey={apiKey} onSignOut={signOut} />} />
       <Route
         path="/subscriptions"
         element={<Subscriptions apiKey={apiKey} onSignOut={signOut} />}
