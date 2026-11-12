@@ -24,6 +24,9 @@ import {
   recordFailedDelivery,
   recordDeliveryAborted,
   recoverAbandonedInFlightDeliveries,
+  purgeExpiredRecords,
+  type PurgeOptions,
+  type PurgeResult,
   findDueDeliveriesForRecovery,
   touchDeliveryRecoveryTimestamp,
   findStaleDeliveries,
@@ -128,6 +131,10 @@ export class WorkerDatabaseService {
 
   async recordDeliveryAborted(deliveryId: string): Promise<void> {
     return recordDeliveryAborted(this.db, deliveryId);
+  }
+
+  async purgeExpiredRecords(options: PurgeOptions): Promise<PurgeResult> {
+    return purgeExpiredRecords(this.db, options);
   }
 
   async recoverAbandonedInFlightDeliveries(

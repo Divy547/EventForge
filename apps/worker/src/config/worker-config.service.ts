@@ -79,4 +79,17 @@ export class WorkerConfigService {
   get staleRecoveryIntervalMs(): number {
     return this.config.STALE_RECOVERY_INTERVAL_MS;
   }
+
+  /** Days to keep completed deliveries and processed events. 0 disables retention. */
+  get retentionDays(): number {
+    return this.config.RETENTION_DAYS;
+  }
+
+  get retentionIntervalMs(): number {
+    return this.config.RETENTION_INTERVAL_MS;
+  }
+
+  get retentionBatchSize(): number {
+    return this.config.RETENTION_BATCH_SIZE;
+  }
 }

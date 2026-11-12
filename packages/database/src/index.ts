@@ -4,3 +4,4 @@ export * from './transactions/outbox.js';
 export * from './transactions/deliveries.js';
 export { eq, and, or, sql, gte, lte, isNull, isNotNull, desc, asc, inArray } from 'drizzle-orm';
 export * from './admin/admin.js';
+export * from './transactions/retention.js';

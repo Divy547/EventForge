@@ -29,6 +29,11 @@ export const envSchema = z
     DELIVERY_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
     STALE_RECOVERY_INTERVAL_MS: z.coerce.number().int().positive().default(30000),
 
+    // Data retention (worker). RETENTION_DAYS=0 disables the retention job.
+    RETENTION_DAYS: z.coerce.number().int().nonnegative().default(30),
+    RETENTION_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+    RETENTION_BATCH_SIZE: z.coerce.number().int().positive().default(1000),
+
     // API protection
     RATE_LIMIT_ENABLED: z
       .union([z.boolean(), z.string()])
