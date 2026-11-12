@@ -21,12 +21,30 @@ export function configureHttpSecurity(
     server.set('trust proxy', config.TRUST_PROXY_HOPS);
   }
 
-  // Swagger UI relies on inline scripts/styles, so only /docs gets a relaxed CSP.
+  // Swagger UI relies on inline scripts/styles, so only /docs gets a relaxed CSP. The dashboard SPA
+  // has its own policy: scripts, fonts and connections stay same-origin only; styles additionally
+  // allow inline because Radix UI and Recharts inject <style> elements at runtime.
   const strict = helmet();
   const relaxed = helmet({ contentSecurityPolicy: false });
-  app.use((req: Request, res: Response, next: NextFunction) =>
-    req.path.startsWith('/docs') ? relaxed(req, res, next) : strict(req, res, next),
-  );
+  const dashboard = helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'font-src': ["'self'"],
+        'connect-src': ["'self'"],
+        // Nothing here is mixed content, and upgrading breaks plain-http access by IP or host name.
+        'upgrade-insecure-requests': null,
+      },
+    },
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/docs')) return relaxed(req, res, next);
+    if (req.path === '/dashboard' || req.path.startsWith('/dashboard/')) {
+      return dashboard(req, res, next);
+    }
+    return strict(req, res, next);
+  });
 
   const allowed = new Set(config.CORS_ALLOWED_ORIGINS);
   app.enableCors({

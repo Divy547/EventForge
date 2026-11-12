@@ -15,6 +15,7 @@ FROM base AS dependencies
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc* ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/worker/package.json ./apps/worker/
+COPY apps/dashboard/package.json ./apps/dashboard/
 COPY packages/common/package.json ./packages/common/
 COPY packages/config/package.json ./packages/config/
 COPY packages/database/package.json ./packages/database/
@@ -28,7 +29,8 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 COPY apps/worker/ ./apps/worker/
 COPY turbo.json tsconfig*.json ./
-RUN pnpm build
+# Only the worker and its workspace dependencies; the dashboard bundle is not part of this image.
+RUN pnpm turbo run build --filter=@eventforge/worker...
 # Keep only production dependencies. (`pnpm prune --prod` empties node_modules entirely in this
 # workspace, so reinstall with --prod instead; the layout stays identical.)
 RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules \

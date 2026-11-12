@@ -15,6 +15,7 @@ FROM base AS dependencies
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc* ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/worker/package.json ./apps/worker/
+COPY apps/dashboard/package.json ./apps/dashboard/
 COPY packages/common/package.json ./packages/common/
 COPY packages/config/package.json ./packages/config/
 COPY packages/database/package.json ./packages/database/
@@ -27,6 +28,7 @@ FROM dependencies AS builder
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 COPY apps/worker/ ./apps/worker/
+COPY apps/dashboard/ ./apps/dashboard/
 COPY turbo.json tsconfig*.json ./
 RUN pnpm build
 # Keep only production dependencies. (`pnpm prune --prod` empties node_modules entirely in this
@@ -60,6 +62,10 @@ COPY --from=builder --chown=node:node /app/packages/database/node_modules ./pack
 COPY --from=builder --chown=node:node /app/packages/database/migrations ./packages/database/migrations
 COPY --from=builder --chown=node:node /app/packages/sdk/package.json ./packages/sdk/package.json
 COPY --from=builder --chown=node:node /app/packages/sdk/dist ./packages/sdk/dist
+
+# Copy the built dashboard bundle (served by the API under /dashboard; React and friends are
+# compiled into it, so no dashboard node_modules are needed at runtime)
+COPY --from=builder --chown=node:node /app/apps/dashboard/dist ./apps/dashboard/dist
 
 # Copy API app
 COPY --from=builder --chown=node:node /app/apps/api/package.json ./apps/api/package.json

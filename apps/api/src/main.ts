@@ -6,6 +6,8 @@ import * as path from 'node:path';
 import { validateEnv } from '@eventforge/config';
 import { StructuredLogger, type LogLevel } from '@eventforge/common';
 import { configureHttpSecurity } from './common/security/http-security.js';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { configureDashboard, defaultDashboardDir } from './common/dashboard/serve-dashboard.js';
 import { AppModule } from './app.module.js';
 
 // Load environment variables before validation
@@ -26,13 +28,20 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
 
   // 3. Initialize NestJS application
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: structuredLogger,
     bufferLogs: true,
   });
 
   // 3. HTTP security: trust proxy, helmet, CORS
   configureHttpSecurity(app, env);
+
+  // 3. Dashboard SPA (same process, no extra container); skipped if the bundle isn't built
+  if (configureDashboard(app, defaultDashboardDir(import.meta.dirname))) {
+    logger.log(`Dashboard available at http://localhost:${env.PORT}/dashboard/`);
+  } else {
+    logger.warn('Dashboard bundle not found (run `pnpm build`); /dashboard is not served');
+  }
 
   // 3. Graceful shutdown hooks
   app.enableShutdownHooks();
