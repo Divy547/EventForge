@@ -25,3 +25,29 @@ export function formatAgo(iso: string, now: number = Date.now()): string {
   if (hours < 24) return `${hours} h ago`;
   return `${Math.floor(hours / 24)} d ago`;
 }
+
+/** "2026-11-12T11:55:00.000Z" -> the visitor's local date and time. */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString();
+}
+
+/** First eight characters of a UUID: enough to tell rows apart, the full ID is on the detail page. */
+export function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+function parseLocalDay(day: string, time: string): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return undefined;
+  const date = new Date(`${day}T${time}`);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+/** "2026-11-12" (a date input's value) -> the ISO instant that local day starts. Bad input -> undefined. */
+export function startOfDayIso(day: string): string | undefined {
+  return parseLocalDay(day, '00:00:00.000');
+}
+
+/** Same, for the last millisecond of the local day, so a "to" date includes that whole day. */
+export function endOfDayIso(day: string): string | undefined {
+  return parseLocalDay(day, '23:59:59.999');
+}

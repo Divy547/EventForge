@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MotionConfig } from 'motion/react';
+import { BrowserRouter } from 'react-router';
 import './index.css';
 import { App } from './App';
 
@@ -11,7 +12,10 @@ if (!root) throw new Error('Missing #root element');
 createRoot(root).render(
   <StrictMode>
     <MotionConfig reducedMotion="user">
-      <App />
+      {/* Vite's `base` and the API's static route both put the app under /dashboard. */}
+      <BrowserRouter basename="/dashboard">
+        <App />
+      </BrowserRouter>
     </MotionConfig>
   </StrictMode>,
 );

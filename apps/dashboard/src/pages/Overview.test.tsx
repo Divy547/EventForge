@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, vi } from 'vitest';
 import { Overview } from './Overview';
 import { statsResponse } from '@/test/fixtures';
+import { renderAt } from '@/test/render';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -15,7 +16,7 @@ function mockFetch(impl: () => Promise<Response>) {
 describe('Overview', () => {
   it('shows totals, success rate, the status breakdown and recent failures', async () => {
     const fetchMock = mockFetch(() => Promise.resolve(statsResponse()));
-    render(<Overview apiKey="ef_live_abc" onSignOut={() => {}} />);
+    renderAt(<Overview apiKey="ef_live_abc" onSignOut={() => {}} />);
 
     expect(screen.getByText('Loading your project…')).toBeInTheDocument();
     expect(await screen.findByText('1,280')).toBeInTheDocument();
@@ -37,7 +38,7 @@ describe('Overview', () => {
 
   it('refetches with the chosen window', async () => {
     const fetchMock = mockFetch(() => Promise.resolve(statsResponse()));
-    render(<Overview apiKey="k" onSignOut={() => {}} />);
+    renderAt(<Overview apiKey="k" onSignOut={() => {}} />);
     await screen.findByText('1,280');
 
     await userEvent.setup().click(screen.getByRole('button', { name: '7 d' }));
@@ -50,7 +51,7 @@ describe('Overview', () => {
 
   it('shows a dash and a hint while no delivery has finished, and an empty failure list', async () => {
     mockFetch(() => Promise.resolve(statsResponse({ successRate: null, recentFailures: [] })));
-    render(<Overview apiKey="k" onSignOut={() => {}} />);
+    renderAt(<Overview apiKey="k" onSignOut={() => {}} />);
 
     expect(await screen.findByText('–')).toBeInTheDocument();
     expect(screen.getByText('no delivery has finished yet')).toBeInTheDocument();
@@ -60,7 +61,7 @@ describe('Overview', () => {
   it('signs out when the API rejects the key', async () => {
     const onSignOut = vi.fn();
     mockFetch(() => Promise.resolve(new Response('{}', { status: 401 })));
-    render(<Overview apiKey="revoked" onSignOut={onSignOut} />);
+    renderAt(<Overview apiKey="revoked" onSignOut={onSignOut} />);
 
     await waitFor(() => expect(onSignOut).toHaveBeenCalledTimes(1));
   });
@@ -70,7 +71,7 @@ describe('Overview', () => {
     mockFetch(() =>
       fail ? Promise.reject(new TypeError('down')) : Promise.resolve(statsResponse()),
     );
-    render(<Overview apiKey="k" onSignOut={() => {}} />);
+    renderAt(<Overview apiKey="k" onSignOut={() => {}} />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach the API');
 
@@ -87,7 +88,7 @@ describe('Overview', () => {
         ? Promise.resolve(new Response('{}', { status: 500 }))
         : Promise.resolve(statsResponse()),
     );
-    render(<Overview apiKey="k" onSignOut={() => {}} />);
+    renderAt(<Overview apiKey="k" onSignOut={() => {}} />);
     await screen.findByText('1,280');
 
     fail = true;

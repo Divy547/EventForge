@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router';
 import { Landing } from '@/pages/Landing';
+import { EventDetail } from '@/pages/EventDetail';
+import { Events } from '@/pages/Events';
 import { Overview } from '@/pages/Overview';
 import { clearApiKey, loadApiKey, saveApiKey } from '@/lib/session';
 
@@ -24,5 +27,13 @@ export function App() {
       />
     );
   }
-  return <Overview apiKey={apiKey} onSignOut={signOut} />;
+  // Signing in keeps the URL, so a deep link such as /dashboard/events/<id> works after login.
+  return (
+    <Routes>
+      <Route path="/" element={<Overview apiKey={apiKey} onSignOut={signOut} />} />
+      <Route path="/events" element={<Events apiKey={apiKey} onSignOut={signOut} />} />
+      <Route path="/events/:id" element={<EventDetail apiKey={apiKey} onSignOut={signOut} />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }

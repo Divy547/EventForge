@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { App } from './App';
-import { statsResponse } from './test/fixtures';
+import { eventsPage, statsResponse } from './test/fixtures';
+import { renderAt } from './test/render';
 
 function mockFetch(status: number) {
   const fetchMock = vi
@@ -25,7 +26,7 @@ async function submitKey(key: string) {
 
 describe('Landing and login', () => {
   it('shows the headline, sign-in form and the four feature cards', () => {
-    render(<App />);
+    renderAt(<App />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Webhook delivery');
     expect(screen.getByLabelText('Project API key')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Dead-letter queue' })).toBeInTheDocument();
@@ -34,7 +35,7 @@ describe('Landing and login', () => {
 
   it('accepts a valid key, sends it as X-API-Key, and keeps it in sessionStorage only', async () => {
     const fetchMock = mockFetch(200);
-    render(<App />);
+    renderAt(<App />);
     await submitKey('  ef_live_abc  ');
 
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
@@ -48,7 +49,7 @@ describe('Landing and login', () => {
 
   it('rejects an invalid key with an error and stores nothing', async () => {
     mockFetch(401);
-    render(<App />);
+    renderAt(<App />);
     await submitKey('wrong');
 
     expect(await screen.findByRole('alert')).toHaveTextContent('was not accepted');
@@ -58,7 +59,7 @@ describe('Landing and login', () => {
 
   it('asks for a key instead of calling the API when the field is empty', async () => {
     const fetchMock = mockFetch(200);
-    render(<App />);
+    renderAt(<App />);
     await submitKey('');
 
     expect(screen.getByRole('alert')).toHaveTextContent('Paste your project API key');
@@ -67,7 +68,7 @@ describe('Landing and login', () => {
 
   it('tells the visitor when the API cannot be reached', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')));
-    render(<App />);
+    renderAt(<App />);
     await submitKey('some-key');
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach the API');
@@ -76,7 +77,7 @@ describe('Landing and login', () => {
 
   it('reports rate limiting distinctly from a bad key', async () => {
     mockFetch(429);
-    render(<App />);
+    renderAt(<App />);
     await submitKey('some-key');
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
@@ -84,7 +85,7 @@ describe('Landing and login', () => {
 
   it('skips the landing page when a key is already stored, and sign-out clears it', async () => {
     window.sessionStorage.setItem('eventforge.apiKey', 'ef_live_abc');
-    render(<App />);
+    renderAt(<App />);
     expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign out' }));
@@ -97,10 +98,37 @@ describe('Landing and login', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
-    render(<App />);
+    renderAt(<App />);
     await submitKey('ef_live_abc');
 
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
     vi.restoreAllMocks();
+  });
+
+  it('keeps a deep link through sign-in and navigates between pages from the header', async () => {
+    window.sessionStorage.setItem('eventforge.apiKey', 'ef_live_abc');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(url.startsWith('/v1/stats') ? statsResponse() : eventsPage()),
+        ),
+    );
+    const user = userEvent.setup();
+    renderAt(<App />, '/events');
+
+    expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('aria-current', 'page');
+
+    await user.click(screen.getByRole('link', { name: 'Overview' }));
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+  });
+
+  it('sends unknown paths to the Overview', async () => {
+    window.sessionStorage.setItem('eventforge.apiKey', 'ef_live_abc');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statsResponse()));
+    renderAt(<App />, '/nowhere');
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
   });
 });
