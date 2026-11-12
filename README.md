@@ -58,9 +58,10 @@ two events, and the loser gets the existing event back with `202`. There is no c
 LOCKED)` statement, so several workers can run without blocking each other or claiming the same row.
 
 **At-least-once delivery, not exactly-once.** A worker can send a webhook and die before recording the result, and the
-delivery is then retried. Exactly-once over HTTP is not achievable, so the contract is: every event is delivered at least
-once, and receivers deduplicate on the event or delivery ID (sent as `X-EventForge-Event-Id` and `X-EventForge-Delivery-Id`;
-the SDK has a helper for it).
+delivery is then retried. Exactly-once over HTTP is not achievable, so the contract is: a delivery is retried until the
+receiver returns a `2xx` or the delivery is dead-lettered, so a successful delivery may arrive more than once. Receivers
+deduplicate on the event or delivery ID (sent as `X-EventForge-Event-Id` and `X-EventForge-Delivery-Id`; the SDK has a
+helper for it).
 
 **Lease-based crash recovery.** A worker claims a delivery by moving it to `IN_FLIGHT`. A recovery job (every 30 s by
 default) finds `IN_FLIGHT` deliveries older than the lease (60 s by default), records a `WORKER_CRASHED` attempt, and
@@ -69,7 +70,9 @@ makes them eligible again. This is what makes the at-least-once guarantee hold t
 **Retry classification and backoff.** Retried: 5xx, 429, timeouts and connection errors. Not retried (straight to
 `DEAD_LETTER`): other 4xx, and blocked or invalid URLs. The delay is `random(0, min(24h, 1s × 2^(attempt-1)))` (full
 jitter, so retries from many failures do not arrive in lockstep), or the `Retry-After` header when the endpoint sends
-one. The default is 5 attempts per delivery; replay grants more.
+one. The default is 5 attempts per delivery, which means four waits of at most 1, 2, 4 and 8 s: the whole retry budget is
+about 15 s, so an endpoint that is down for minutes ends in `DEAD_LETTER` and needs a replay (replay grants more
+attempts). Only a `Retry-After` header stretches a wait beyond that.
 
 **HMAC signatures with a timestamp.** Each delivery carries `X-EventForge-Signature: t=<unix>,v1=<hex>`, where the value
 is HMAC-SHA256 over `<timestamp>.<raw body>` with the subscription's secret. The timestamp lets receivers reject replayed

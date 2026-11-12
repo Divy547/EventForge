@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/
 
 const FEATURES: { title: string; text: string; icon: ComponentType<{ className?: string }> }[] = [
   {
-    title: 'Never lose an event',
+    title: 'Saved before it is acknowledged',
     text: 'Each event is saved together with its deliveries in one database transaction before the API answers.',
     icon: Layers,
   },

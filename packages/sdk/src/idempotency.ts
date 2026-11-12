@@ -1,6 +1,6 @@
 /**
- * Standard interface for consumer-side idempotency storage to guarantee
- * exactly-once processing on top of at-least-once webhook delivery.
+ * Standard interface for consumer-side idempotency storage, used to get
+ * effectively-once processing on top of at-least-once webhook delivery.
  */
 export interface IdempotencyStore {
   /**

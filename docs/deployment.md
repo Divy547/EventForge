@@ -169,16 +169,18 @@ const { rawKey, keyHash, keyPrefix } = generateApiKey('live');
 
 ### Rotation Workflow
 
-1. Generate a new API key for the tenant's project:
-   ```sql
-   INSERT INTO api_keys (project_id, name, key_hash, key_prefix)
-   VALUES ('<project_id>', 'Production Key (Rotated)', '<new_hash>', '<new_prefix>');
-   ```
-2. Tenant updates their client applications to authenticate with the new raw key.
-3. Once verified, revoke the old key:
-   ```sql
-   DELETE FROM api_keys WHERE project_id = '<project_id>' AND key_prefix = '<old_prefix>';
-   ```
+Use the admin CLI (see "Tenant projects and API keys" above for how to run it in the container). `key:rotate` revokes the
+old key and issues the new one in a single transaction, so there is no overlap window; `key:revoke` revokes a key without
+replacing it. Both take the key's id from `key:list`.
+
+```bash
+node packages/database/dist/scripts/admin.js key:list --project acme
+node packages/database/dist/scripts/admin.js key:rotate --key <key_id> --name "prod (rotated)"
+```
+
+The new raw key is printed once. The old key stops working immediately, so update the tenant's clients first if they
+cannot tolerate a short outage, by creating a second key with `key:create`, switching the clients to it, and then running
+`key:revoke` on the old one.
 
 ### Webhook Signing Secrets
 
@@ -199,7 +201,7 @@ endpoint. A subscription's secret cannot be changed, so to rotate it:
 ### Health Endpoints
 
 - **Liveness**: `GET /v1/health` (Returns HTTP 200 `{ status: "ok" }`).
-- **Readiness**: `GET /v1/ready` (Returns HTTP 200 with dependency checks `{ database: "up", redis: "up" }`). Returns HTTP 503 if any dependency is degraded.
+- **Readiness**: `GET /v1/ready` (Returns HTTP 200 with a `dependencies` object, `postgres` and `redis` each carrying a `status` and `latencyMs`). Returns HTTP 503 if either is down.
 
 ### Prometheus Metrics
 

@@ -1,6 +1,6 @@
 # EventForge Observability & Operational Architecture
 
-This document describes the observability infrastructure implemented in EventForge Milestone 5, including Prometheus metrics, structured logging, health checking, and operational runbooks.
+This document describes the observability infrastructure implemented in EventForge, including Prometheus metrics, structured logging, health checking, and operational runbooks.
 
 ---
 
@@ -18,7 +18,7 @@ EventForge exposes native, zero-dependency Prometheus exposition format (`versio
 | `eventforge_events_accepted_total`         | Counter   | `event_type`, `is_duplicate`           | Count of ingested business events accepted into PostgreSQL                              | Monotonically increasing counter per API process. Reset on process restart.    |
 | `eventforge_events_rejected_total`         | Counter   | `reason`                               | Count of event ingestion attempts rejected before acceptance (e.g. `payload_too_large`) | Tracks pre-persistence rejections.                                             |
 | `eventforge_http_requests_total`           | Counter   | `method`, `route`, `status_code_class` | Total inbound HTTP requests to the REST API                                             | Routes are parameterized (`:id`) to maintain strictly bounded cardinality.     |
-| `eventforge_http_request_duration_seconds` | Histogram | `method`, `route`, `status_code_class` | Inbound API request execution duration in seconds                                       | Bucketed between 5ms and 5s.                                                   |
+| `eventforge_http_request_duration_seconds` | Histogram | `method`, `route`, `status_code_class` | Inbound API request execution duration in seconds                                       | Bucketed between 5 ms and 10 s.                                                |
 | `eventforge_delivery_attempts_total`       | Counter   | `status_code_class`, `error_code`      | Total HTTP dispatch attempts executed by worker                                         | Incremented on every attempted wire transmission.                              |
 | `eventforge_deliveries_success_total`      | Counter   | _none_                                 | Webhook delivery jobs successfully acknowledged with HTTP 2xx                           | Incremented after database status update completes.                            |
 | `eventforge_deliveries_failed_total`       | Counter   | `error_code`, `retryable`              | Webhook delivery attempts that resulted in errors                                       | Separates transient retries from terminal dead-letters.                        |
@@ -34,6 +34,8 @@ EventForge exposes native, zero-dependency Prometheus exposition format (`versio
 | `eventforge_queue_failed_jobs_gauge`       | Gauge     | _none_                                 | Jobs marked failed inside BullMQ                                                        | Scraped dynamically from Redis.                                                |
 | `eventforge_outbox_pending_gauge`          | Gauge     | _none_                                 | Outbox records in PostgreSQL waiting to be claimed                                      | Sampled at scrape time via `SELECT count(*) WHERE status = 'PENDING'`.         |
 | `eventforge_outbox_failed_gauge`           | Gauge     | _none_                                 | Outbox records in PostgreSQL in `FAILED` status                                         | Sampled at scrape time via `SELECT count(*) WHERE status = 'FAILED'`.          |
+| `eventforge_outbox_dead_letter_gauge`      | Gauge     | _none_                                 | Outbox records in PostgreSQL in `DEAD_LETTER` status                                    | API only. Counts are cached for 15 s.                                          |
+| `eventforge_outbox_dead_letter_total`      | Counter   | _none_                                 | Outbox records moved to `DEAD_LETTER` after 10 failed fan-out attempts                  | Worker only. Reset on process restart.                                         |
 | `eventforge_db_pool_total_connections`     | Gauge     | _none_                                 | Total PostgreSQL pool connections allocated                                             | Pool state at scrape time.                                                     |
 | `eventforge_db_pool_idle_connections`      | Gauge     | _none_                                 | Idle PostgreSQL pool connections ready for queries                                      | Pool state at scrape time.                                                     |
 | `eventforge_db_pool_waiting_requests`      | Gauge     | _none_                                 | Client requests waiting for an available PostgreSQL connection                          | Non-zero values indicate pool saturation.                                      |

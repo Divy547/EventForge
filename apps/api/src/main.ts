@@ -62,7 +62,7 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('EventForge API')
     .setDescription(
-      'EventForge is a production-grade, reliable event ingestion and webhook delivery platform API.',
+      'EventForge is an event ingestion and webhook delivery API with at-least-once delivery, retries and a dead-letter queue.',
     )
     .setVersion('1.0.0')
     .addApiKey(

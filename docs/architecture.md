@@ -1,6 +1,6 @@
 # EventForge — System Architecture & Delivery Semantics
 
-EventForge is a production-grade, multi-tenant webhook delivery and event orchestration platform designed for high availability, zero message loss, and strict at-least-once delivery guarantees.
+EventForge is a multi-tenant webhook delivery service built around a transactional outbox and at-least-once delivery. An accepted event is committed to PostgreSQL before the API responds, and delivery state is kept in PostgreSQL so work survives worker crashes and queue loss. The public demo is a single small VM, so it is not highly available; the design allows several API and worker replicas, but that has not been load-tested.
 
 ---
 
@@ -108,6 +108,7 @@ $$\text{delay} = \text{random}\left[0,\ \min(\text{maxDelayMs},\ \text{baseDelay
 - **Retryable**: HTTP `429`, any HTTP `5xx`, and transport errors `TIMEOUT`, `ETIMEDOUT`, `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `NETWORK_ERROR`.
 - **Non-Retryable** (straight to `DEAD_LETTER` on first failure): every other `4xx` (e.g. `400`, `401`, `403`, `404`), `SSRF_BLOCKED`, `INVALID_URL`, `UNSUPPORTED_PROTOCOL`, and any unclassified error.
 - **Exhaustion**: once `attempts_count` reaches `max_attempts` (default 5) the delivery moves to `DEAD_LETTER` regardless of error type.
+- **What the defaults add up to**: 5 attempts leave four waits, each at most 1, 2, 4 and 8 s, so the retry budget is about 15 s in the worst case (about 7 s on average, because of full jitter). The 24-hour ceiling only matters for later attempts after replays raise `max_attempts`, or for a `Retry-After` header. A receiver that is down for minutes will dead-letter its deliveries and need a replay.
 
 ---
 
@@ -131,7 +132,7 @@ When downstream receiver outages are resolved, operators can replay dead-lettere
 
 ## 6. At-Least-Once Delivery & Consumer Idempotency
 
-EventForge guarantees **at-least-once delivery**: every event matching an active subscription is guaranteed to be delivered at least once, even across worker crashes, network timeouts, and Redis restarts.
+EventForge provides **at-least-once delivery**: a delivery is retried until the receiver answers with a `2xx` or the delivery reaches `DEAD_LETTER` (a non-retryable error, or `max_attempts` exhausted), where it waits for a manual replay. Delivery state lives in PostgreSQL, so a worker crash mid-attempt is recovered after the lease timeout, and due deliveries that are missing from Redis are re-enqueued by the recovery pass (`StaleDeliveryRecoveryService`; covered by `apps/worker/test/reliability-remediation.integration.spec.ts`). A receiver that stays down past the retry budget is not delivered to until someone replays the dead letter.
 
 Because network failures can occur after a webhook is processed by the receiver but before the HTTP 200 response reaches EventForge, downstream consumers **must implement idempotent handling**.
 
@@ -176,7 +177,7 @@ app.post('/webhook', (req, res) => {
 
 ## 7. W3C Distributed Tracing Propagation
 
-EventForge maintains distributed trace context across the entire lifecycle:
+EventForge propagates W3C trace context from the inbound request to the outbound webhook:
 
 ```
 [Inbound Request] (traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01)
@@ -197,7 +198,7 @@ EventForge maintains distributed trace context across the entire lifecycle:
 [Webhook Consumer Request] (traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-5c3a2b1f0e4d8a9c-01)
 ```
 
-This enables complete end-to-end distributed tracing across microservice boundaries in OpenTelemetry-compatible APM tools (Datadog, Jaeger, Grafana Tempo).
+This lets a receiver join the caller's trace. EventForge only carries the `traceparent` value (the code depends on `@opentelemetry/api` but ships no SDK or exporter), so it does not emit spans of its own and no APM integration has been tested.
 
 ---
 
