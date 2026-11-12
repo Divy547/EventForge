@@ -1,21 +1,29 @@
-import { Button } from '@/components/ui/button';
+import { useState } from 'react';
+import { Landing } from '@/pages/Landing';
+import { SignedIn } from '@/pages/SignedIn';
+import { clearApiKey, loadApiKey, saveApiKey } from '@/lib/session';
 
-/** Placeholder shell; the login/landing page replaces this in the next task. */
 export function App() {
+  // The key is validated by the login form before it gets here, so a stored key is trusted for
+  // this tab; the API still rejects it on every request if it has since been revoked.
+  const [apiKey, setApiKey] = useState<string | null>(() => loadApiKey());
+
+  if (!apiKey) {
+    return (
+      <Landing
+        onSignedIn={(key) => {
+          saveApiKey(key);
+          setApiKey(key);
+        }}
+      />
+    );
+  }
   return (
-    <main className="min-h-screen">
-      <header className="bg-navy text-navy-foreground">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-          <span className="font-heading text-lg font-semibold">EventForge</span>
-        </div>
-      </header>
-      <section className="mx-auto max-w-5xl px-4 py-12">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground mt-2">
-          Event delivery, retries and dead letters, in one place.
-        </p>
-        <Button className="mt-6">Get started</Button>
-      </section>
-    </main>
+    <SignedIn
+      onSignOut={() => {
+        clearApiKey();
+        setApiKey(null);
+      }}
+    />
   );
 }

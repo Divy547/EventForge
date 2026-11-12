@@ -1,10 +1,101 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { App } from './App';
 
-describe('App shell', () => {
-  it('renders the dashboard heading and a primary action', () => {
+function mockFetch(status: number) {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+beforeEach(() => window.sessionStorage.clear());
+afterEach(() => vi.unstubAllGlobals());
+
+async function submitKey(key: string) {
+  const user = userEvent.setup();
+  if (key) await user.type(screen.getByLabelText('Project API key'), key);
+  await user.click(screen.getByRole('button', { name: 'Sign in' }));
+}
+
+describe('Landing and login', () => {
+  it('shows the headline, sign-in form and the four feature cards', () => {
     render(<App />);
-    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Webhook delivery');
+    expect(screen.getByLabelText('Project API key')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dead-letter queue' })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('accepts a valid key, sends it as X-API-Key, and keeps it in sessionStorage only', async () => {
+    const fetchMock = mockFetch(200);
+    render(<App />);
+    await submitKey('  ef_live_abc  ');
+
+    expect(await screen.findByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/stats?windowHours=1',
+      expect.objectContaining({ headers: { 'X-API-Key': 'ef_live_abc' } }),
+    );
+    expect(window.sessionStorage.getItem('eventforge.apiKey')).toBe('ef_live_abc');
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('rejects an invalid key with an error and stores nothing', async () => {
+    mockFetch(401);
+    render(<App />);
+    await submitKey('wrong');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('was not accepted');
+    expect(screen.queryByRole('heading', { name: 'You are signed in' })).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('asks for a key instead of calling the API when the field is empty', async () => {
+    const fetchMock = mockFetch(200);
+    render(<App />);
+    await submitKey('');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Paste your project API key');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('tells the visitor when the API cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')));
+    render(<App />);
+    await submitKey('some-key');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach the API');
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('reports rate limiting distinctly from a bad key', async () => {
+    mockFetch(429);
+    render(<App />);
+    await submitKey('some-key');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
+  });
+
+  it('skips the landing page when a key is already stored, and sign-out clears it', async () => {
+    window.sessionStorage.setItem('eventforge.apiKey', 'ef_live_abc');
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(screen.getByLabelText('Project API key')).toBeInTheDocument());
+    expect(window.sessionStorage.getItem('eventforge.apiKey')).toBeNull();
+  });
+
+  it('still works for this page view when sessionStorage throws', async () => {
+    mockFetch(200);
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    render(<App />);
+    await submitKey('ef_live_abc');
+
+    expect(await screen.findByRole('heading', { name: 'You are signed in' })).toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });
