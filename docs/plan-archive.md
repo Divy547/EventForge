@@ -299,9 +299,9 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
 
 ## Phase 3 — Free Deployment: tasks and acceptance criteria
 
-**Status: 🔄 Moved here while two items remain open (2026-11-12):** the Azure credit burn rate, and the flaky-test fix
-(`fcbc8df`) not yet seen green in CI. Both are tracked in `PLAN.md`. The text below is the Phase 3 detail as it stood when
-the wording and archive pass (task 8) was done; commit hashes for each task are in the table.
+**Status: 🔄 Moved here while one item remains open (2026-11-12):** the Azure credit burn rate, which is tracked in
+`PLAN.md`. The text below is the Phase 3 detail as it stood when the wording and archive pass (task 8) was done; commit
+hashes for each task are in the table.
 
 **Environment (done by the user):** Azure for Students account; VM `eventforge-vm` created in East Asia
 (Standard_B2ats_v2, Ubuntu 24.04, Standard SKU static public IP, NSG allows 22/80/443); SSH login verified. The private
@@ -358,7 +358,7 @@ key lives only in `~/.ssh` and is never committed or shared.
 - **Flaky test fixed (`fcbc8df`).** `turbo run test` ran the API and worker suites in parallel on one shared PostgreSQL;
   the worker's outbox pollers could claim the row that the API concurrency test had just created, so it saw `PROCESSED`
   instead of `PENDING` (one CI failure; reproduced locally in 4 of 12 runs). `test` and `test:integration` now run with
-  `--concurrency=1`. Not yet seen green in CI after the change.
+  `--concurrency=1`. Seen green in CI run `43285625950` (one run, so evidence rather than proof).
 - **CI concurrency changed (`1a74ebf`).** Only pull request runs are cancelled by a newer push; runs on `main` finish, so
   a deploy is never killed halfway.
 
