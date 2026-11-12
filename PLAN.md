@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phase 1 is **implemented and committed** (2026-11-12). Phase 2 is **approved and in
 progress**: task 1 (backend endpoints) is committed as `fc7dd20`; task 2 (dashboard scaffold) is committed as `43bff6a`;
-task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. Task 10 (Sandbox mode) is committed as `ab92174`. Task 11 (responsive and theming pass) is implemented and **awaiting review, not committed**. Task 12 is next, awaiting approval.
+task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. Task 10 (Sandbox mode) is committed as `ab92174`. Task 11 (responsive and theming pass) is committed as `fcd5960`. Task 12 is next, awaiting approval.
 
 ---
 
@@ -77,7 +77,7 @@ task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) 
 
 ### Phase 2 — Dashboard
 
-**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is committed as `450a0d8`; task 10 is committed as `ab92174`; task 11 is awaiting review; task 12 has not been started.
+**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is committed as `450a0d8`; task 10 is committed as `ab92174`; task 11 is committed as `fcd5960`; task 12 has not been started.
 
 **Existing API surface** (checked 2026-11-12): events (`POST`, `GET` list with `page`/`limit`, `GET :id`),
 deliveries (`GET` list, `GET :id` which already includes the attempts list, single and batch DLQ replay),
@@ -177,7 +177,7 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
 10. **Sandbox mode**: "Send test event"; built-in demo receiver (always succeed, fail N times then succeed,
     always `500`, slow/timeout); restricted to a dedicated demo project; rate limited. Needs a narrow SSRF
     exception for the demo receiver's own address only.
-    _Done (uncommitted, awaiting review): off by default (`SANDBOX_ENABLED`, `SANDBOX_RECEIVER_URL`; env examples and
+    _Done (`ab92174`): off by default (`SANDBOX_ENABLED`, `SANDBOX_RECEIVER_URL`; env examples and
     `docker-compose.prod.yml` updated). **API** (`modules/sandbox`): public `POST /v1/sandbox/session` mints a 1-hour key
     for the one shared `sandbox` project (created on demand with one canonical subscription per scenario; expired keys
     are purged on each session); `POST /v1/sandbox/events {scenario}` ingests `sandbox.<scenario>`; the receiver is
@@ -203,7 +203,7 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
 
 11. **Responsive and theming pass**: phone width, light and dark mode (shadcn CSS variables), and a check of
     every animation against reduced motion. See `docs/dashboard-design.md`.
-    _Done (uncommitted, awaiting review): **Theme**: the dark tokens already existed but nothing switched them; a
+    _Done (`fcd5960`): **Theme**: the dark tokens already existed but nothing switched them; a
     `ThemeToggle` (System, Light, Dark; one button, on the landing page and the signed-in header) sets the `dark` class
     on `<html>`, follows the OS while on System (including live changes), and is remembered in `localStorage` (guarded
     against storage errors; the API key stays in `sessionStorage` only). It is applied in `main.tsx` before the first
