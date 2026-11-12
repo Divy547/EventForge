@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 in progress; deployment guide done, first deploy next)_
+_Last updated: 2026-11-12 (Phase 3 in progress; first deploy live and verified, fallback doc next)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -10,7 +10,8 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **in progress**:
 the Azure VM exists and accepts SSH; Caddy and the GHCR image pipeline are committed, pushed and CI is green (including
-`publish-images`); memory limits for the 1 GiB VM are committed (`45db147`); the deployment guide is committed (`9dbc416`); the first deploy (task 5) is next.
+`publish-images`); memory limits for the 1 GiB VM are committed (`45db147`); the deployment guide is committed (`9dbc416`, corrected in `023edc7`); the **first deploy is live** at
+`https://40-81-24-8.sslip.io` and verified (task 5), apart from recording the credit burn rate; the fallback doc (task 6) is next.
 
 ---
 
@@ -128,8 +129,8 @@ key lives only in `~/.ssh` and is never committed or shared.
 | 2   | **Prebuilt images:** CI `publish-images` job pushes API and worker images to GHCR on `main`; compose pulls them (`pull` then `up -d --no-build`). Replaces the old "arm64 builds" task: the VM is x64. The first CI run failed because the worker image copied `packages/sdk/dist`, which the worker never builds (masked locally by a stale `dist` that `.dockerignore` did not exclude); fixed in `3777291`, CI green on 2026-11-12.                                                   | ✅ `a895809`, `3777291` |
 | 3   | **Memory limits for 1 GiB:** per-service `mem_limit`s (api 224m, worker 192m, postgres 160m, redis 48m, caddy 48m; all env-overridable), V8 heap caps below them, Postgres tuned (`shared_buffers=24MB`, `max_connections=40`), Redis `maxmemory 32mb` with `noeviction`, DB pools 10 each. Measured locally: idle ~455 MiB unlimited; with limits, `smoke-test:remote` 28/28 and 600 events at concurrency 20 peak at ~200 MiB total, no OOM kills. Real 1 GiB check happens in task 5. | ✅ `45db147`            |
 | 4   | **`docs/deploy-azure-student.md`:** VM and NSG recap, 2 GB swap, Docker install, `.env.production` (generate secrets on the VM), first deploy, seeding the demo project and sandbox, backups, stopping/deallocating the VM to save credit, checking remaining credit.                                                                                                                                                                                                                    | ✅ `9dbc416`            |
-| 5   | **First deploy and verification** on the VM against every acceptance criterion below (needs the commits pushed, CI green, and both GHCR packages public).                                                                                                                                                                                                                                                                                                                                | ⏳ Next                 |
-| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends.                                                                                                                                                                                                                                                                                                                                                             | ⏳ Not started          |
+| 5   | **First deploy and verification** on the VM against every acceptance criterion below (needs the commits pushed, CI green, and both GHCR packages public). Done 2026-11-12: `smoke-test:remote` 28/28 against the public URL, only ports 22/80/443 open, ~213 MiB used with no OOM kills, reboot recovery. Open: credit burn rate, and confirming that data survived the reboot.                                                                                                          | ⏳ Next                 |
+| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends.                                                                                                                                                                                                                                                                                                                                                             | ⏳ Next                 |
 | 7   | **Optional CD:** after a green CI run on `main`, a workflow deploys to the VM over SSH (`pull` + `up -d --no-build`). Only after the manual deploy works.                                                                                                                                                                                                                                                                                                                                | ⏳ Optional, last       |
 | 8   | **Plan and docs wording:** archive the Phase 3 details, refresh baselines, and correct any docs that still mention Oracle or arm64.                                                                                                                                                                                                                                                                                                                                                      | ⏳ End of phase         |
 
@@ -148,21 +149,27 @@ key lives only in `~/.ssh` and is never committed or shared.
 
 **Acceptance criteria**
 
-- [ ] Only ports 80/443 (and SSH) are reachable on the VM; Postgres, Redis, the worker, and `/metrics` without its token
+- [x] Only ports 80/443 (and SSH) are reachable on the VM; Postgres, Redis, the worker, and `/metrics` without its token
       are not.
-- [ ] `https://40-81-24-8.sslip.io/v1/health` returns `200` with a valid certificate.
-- [ ] `https://40-81-24-8.sslip.io/dashboard` loads and the sandbox flow works on the live server.
-- [ ] `pnpm smoke-test:remote` passes against the public URL.
-- [ ] The stack fits in 1 GiB: no out-of-memory kills across the smoke test and a sandbox session (checked with
+- [x] `https://40-81-24-8.sslip.io/v1/health` returns `200` with a valid certificate.
+- [x] `https://40-81-24-8.sslip.io/dashboard` loads and the sandbox flow works on the live server.
+- [x] `pnpm smoke-test:remote` passes against the public URL. (28/28)
+- [x] The stack fits in 1 GiB: no out-of-memory kills across the smoke test and a sandbox session (checked with
       `docker stats` and `dmesg`).
 - [ ] Stack recovers automatically after a VM reboot (`restart: unless-stopped`, volumes persist, certificate kept).
-- [ ] Following `docs/deploy-azure-student.md` from scratch produces a working deployment.
+      Services and certificate came back on their own; data persistence still to be confirmed.
+- [x] Following `docs/deploy-azure-student.md` from scratch produces a working deployment. Followed on the fresh
+      VM; the corrections it needed are in `023edc7`.
 - [ ] Out-of-pocket cost is $0: no payment method attached, and the credit's burn rate and expected end date are
-      recorded in the guide.
+      recorded in the guide. No payment method is attached and a budget alert exists (8,500 INR, alerts at 50% and 80%);
+      the burn rate waits for the first Cost Management data.
 - [ ] (If CD is done) a push to `main` that passes CI redeploys the server without manual steps.
 
 **Risks and notes**
 
+- Usable RAM on the VM is about 836 MiB, not 1 GiB. Caddy sits at about 85% of its 48 MiB limit; raise
+  `CADDY_MEM_LIMIT` to 64m if it is ever OOM-killed (a small compose and docs change, not made yet).
+- The smoke test leaves a `smoke-test` project in the production database; harmless.
 - The credit is finite (about 6 months at this size). When it ends the VM stops; the fallback path keeps the demo
   available.
 - 1 GiB RAM is tight. If it proves too small, resize to B2als_v2 (4 GiB, ~$38/month, about 2 months of credit) in the
