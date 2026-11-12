@@ -90,7 +90,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
 
 ### Smoke Testing a Running Stack
 
-`pnpm smoke-test:remote` verifies a running production-configured stack using only its public HTTP surface (plus the admin CLI to mint a throwaway key, which it revokes afterwards). It checks health and readiness, security headers, authentication (401 without or with an invalid key), SSRF rejection of private targets, event ingestion and idempotency, `/metrics` protection, and that the worker port is closed.
+`pnpm smoke-test:remote` verifies a running production-configured stack using only its public HTTP surface (plus the admin CLI to mint a throwaway key, which it revokes afterwards). It checks health and readiness, security headers, authentication (401 without or with an invalid key), SSRF rejection of private targets, event ingestion and idempotency, event detail (with its deliveries) and `GET /v1/stats`, the dashboard at `/dashboard` (HTML served uncached, client-side route fallback, same-origin CSP, no third-party resources, immutable hashed assets, 404 for a missing file), the sandbox endpoint (404 when sandbox mode is off, 201 with a key when on), `/metrics` protection, and that the worker port is closed.
 
 ```bash
 # Against the local production compose stack
@@ -101,6 +101,12 @@ API_URL=https://your-host SMOKE_API_KEY=<key> METRICS_TOKEN=<token> pnpm smoke-t
 ```
 
 It does **not** prove webhook delivery, because production only delivers to public URLs (local targets are blocked by SSRF protection). Delivery is covered by `pnpm smoke-test` (which spawns the built API and worker locally) and the integration tests.
+
+### Dashboard and Sandbox
+
+The dashboard is built with the rest of the workspace (`pnpm build`) and the API serves it at `/dashboard` from the same container; the Dockerfile copies the bundle in, so there is nothing extra to run or expose. If the bundle is missing the API logs a warning and `/dashboard` returns 404. The dashboard has its own Content-Security-Policy (same-origin scripts, fonts and connections; inline styles allowed because Radix UI and Recharts inject `<style>` elements), while the API and `/docs` keep theirs.
+
+Sandbox mode is **off** by default. To run a public demo set `SANDBOX_ENABLED=true` and `SANDBOX_RECEIVER_URL` (how the **worker** reaches the API's demo receiver, `http://api:3000/sandbox/receiver` in the prod compose network) on both the API and the worker, and tune `SANDBOX_SESSIONS_PER_HOUR` / `SANDBOX_WRITES_PER_HOUR`. Visitors get a one-hour key to one shared `sandbox` project, so they can see each other's events. The receiver URL is the only private address the worker is allowed to call; every other target still goes through SSRF checks. Check the result with `pnpm smoke-test:remote`.
 
 ### PostgreSQL Backup Procedure
 

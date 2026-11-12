@@ -18,6 +18,8 @@ EventForge is a production-grade, reliable event-processing and webhook delivery
 - **Per-Subscription Throttling**: `rateLimitPerSecond` is enforced in the worker without consuming retry attempts.
 - **Data Retention**: a worker job deletes completed deliveries and processed events after `RETENTION_DAYS`, never touching unfinished or dead-lettered work.
 - **Tenant Admin CLI**: create projects, and create, list, revoke and rotate API keys.
+- **Web Dashboard**: a React app served by the API at `/dashboard` (no extra container). Sign in with an API key to see delivery health, browse events and deliveries with their attempts, manage subscriptions and replay dead letters. Light and dark theme, usable at phone width, no third-party requests.
+- **Live Sandbox (optional)**: with `SANDBOX_ENABLED=true`, a visitor can get a one-hour key and send an event to a built-in demo receiver, then watch it retry, dead-letter and replay, with no account.
 - **Full Observability**: Prometheus metrics at `/v1/metrics`, structured JSON logging with automated redaction of sensitive credentials, and container readiness probes.
 - **Production Containerization**: Multi-stage Dockerfiles (`node:24-alpine`) with non-root runtime users (`node`), a one-off `migrate` service that runs before the API and worker, and a standalone production Docker Compose file. Measured image size: ~73 MB gzip-compressed / ~369 MB on disk (see `docs/deployment.md`).
 
@@ -28,7 +30,8 @@ EventForge is a production-grade, reliable event-processing and webhook delivery
 ```text
 EventForge/
 ├── apps/
-│   ├── api/                   # NestJS REST API (ingestion, tenant auth, DLQ replay, Swagger)
+│   ├── api/                   # NestJS REST API (ingestion, tenant auth, DLQ replay, stats, sandbox, Swagger)
+│   ├── dashboard/             # React + Vite web dashboard (built, then served by the API at /dashboard)
 │   └── worker/                # NestJS background worker (polling outbox, BullMQ, delivery)
 ├── packages/
 │   ├── common/                # Domain types, HMAC crypto, SSRF validation, W3C tracing, logger
@@ -43,7 +46,8 @@ EventForge/
 ├── scripts/
 │   ├── demo.ts                # Autonomous end-to-end verification & lifecycle demonstration
 │   ├── load-test.ts           # 5-scenario reproducible load testing harness & benchmarking
-│   └── smoke-test.ts          # 11-step production deployment smoke test
+│   ├── smoke-test.ts          # 11-step production deployment smoke test
+│   └── smoke-test-remote.ts   # HTTP-only smoke test of a running stack (API, stats, dashboard, sandbox)
 ├── docker-compose.yml         # Local development Compose (PostgreSQL 16 & Redis 7)
 ├── docker-compose.prod.yml    # Production Compose (API, Worker, Private PostgreSQL & Redis)
 ├── .env.example               # Development environment template
@@ -101,6 +105,19 @@ pnpm dev:worker
 pnpm demo
 ```
 
+### 6. Open the Dashboard
+
+```bash
+pnpm build    # once, and after dashboard changes: the API serves the built bundle
+pnpm dev:api  # then open http://localhost:3000/dashboard/ and sign in with an API key
+```
+
+For hot reload while editing the dashboard, run `pnpm --filter @eventforge/dashboard dev` (port 5173, opens at `/dashboard/`). It proxies `/v1` to the API at `http://localhost:3000` (override with `API_URL`).
+
+Create a key with `pnpm admin key:create --project <slug> --name <name>`. The key stays in the browser's session storage only and is sent as `X-API-Key`; closing the tab signs you out.
+
+**Sandbox mode** lets visitors try the product without a key. Set `SANDBOX_ENABLED=true` and `SANDBOX_RECEIVER_URL` (see `.env.example`), run the API and worker, and the landing page shows a "Try the live sandbox" button. It uses one shared `sandbox` project, a built-in demo receiver and per-IP rate limits.
+
 ---
 
 ## Production Deployment
@@ -149,35 +166,35 @@ For complete backup, restore, rotation, and scaling procedures, see [`docs/deplo
 
 All workspace commands are orchestrated through Turborepo from the root:
 
-| Command                  | Description                                                    |
-| :----------------------- | :------------------------------------------------------------- |
-| `pnpm build`             | Compile all packages and applications in topological order     |
-| `pnpm dev`               | Run development servers in watch mode with streaming logs      |
-| `pnpm dev:api`           | Start NestJS API in hot-reload development mode                |
-| `pnpm dev:worker`        | Start NestJS Background Worker in hot-reload mode              |
-| `pnpm start:api`         | Start compiled NestJS API production server                    |
-| `pnpm start:worker`      | Start compiled NestJS Background Worker production server      |
-| `pnpm lint`              | Run ESLint across all workspace files                          |
-| `pnpm lint:fix`          | Automatically fix ESLint warnings and errors                   |
-| `pnpm typecheck`         | Run TypeScript typechecking across all workspace packages      |
-| `pnpm test`              | Run all test suites across all packages                        |
-| `pnpm test:unit`         | Run fast isolated unit tests                                   |
-| `pnpm test:integration`  | Run database integration tests against real PostgreSQL & Redis |
-| `pnpm format:check`      | Verify formatting with Prettier                                |
-| `pnpm format:write`      | Format codebase with Prettier                                  |
-| `pnpm demo`              | Run automated end-to-end lifecycle demonstration               |
-| `pnpm load-test`         | Run 5-scenario performance baseline & load test                |
-| `pnpm smoke-test`        | Run 11-step smoke test (spawns the built API/worker locally)   |
-| `pnpm smoke-test:remote` | HTTP-only smoke test of a running prod-config stack or URL     |
-| `pnpm db:migrate`        | Execute pending SQL migrations against PostgreSQL              |
-| `pnpm db:migrate:prod`   | Run the compiled migration runner against `DATABASE_URL`       |
-| `pnpm admin <cmd>`       | Admin CLI: `project:create`, `key:create/list/revoke/rotate`   |
-| `pnpm db:seed`           | Populate database with demo project, API key, and subscription |
-| `pnpm db:verify`         | Run database and outbox verification script                    |
-| `pnpm docker:up`         | Start local PostgreSQL and Redis containers                    |
-| `pnpm docker:down`       | Stop local development containers                              |
-| `pnpm docker:prod:up`    | Build and start full production Docker Compose stack           |
-| `pnpm docker:prod:down`  | Stop production Docker Compose stack                           |
+| Command                  | Description                                                     |
+| :----------------------- | :-------------------------------------------------------------- |
+| `pnpm build`             | Compile all packages and applications in topological order      |
+| `pnpm dev`               | Run development servers in watch mode with streaming logs       |
+| `pnpm dev:api`           | Start NestJS API in hot-reload development mode                 |
+| `pnpm dev:worker`        | Start NestJS Background Worker in hot-reload mode               |
+| `pnpm start:api`         | Start compiled NestJS API production server                     |
+| `pnpm start:worker`      | Start compiled NestJS Background Worker production server       |
+| `pnpm lint`              | Run ESLint across all workspace files                           |
+| `pnpm lint:fix`          | Automatically fix ESLint warnings and errors                    |
+| `pnpm typecheck`         | Run TypeScript typechecking across all workspace packages       |
+| `pnpm test`              | Run all test suites across all packages                         |
+| `pnpm test:unit`         | Run fast isolated unit tests                                    |
+| `pnpm test:integration`  | Run database integration tests against real PostgreSQL & Redis  |
+| `pnpm format:check`      | Verify formatting with Prettier                                 |
+| `pnpm format:write`      | Format codebase with Prettier                                   |
+| `pnpm demo`              | Run automated end-to-end lifecycle demonstration                |
+| `pnpm load-test`         | Run 5-scenario performance baseline & load test                 |
+| `pnpm smoke-test`        | Run 11-step smoke test (spawns the built API/worker locally)    |
+| `pnpm smoke-test:remote` | HTTP-only smoke test (API, stats, dashboard) of a running stack |
+| `pnpm db:migrate`        | Execute pending SQL migrations against PostgreSQL               |
+| `pnpm db:migrate:prod`   | Run the compiled migration runner against `DATABASE_URL`        |
+| `pnpm admin <cmd>`       | Admin CLI: `project:create`, `key:create/list/revoke/rotate`    |
+| `pnpm db:seed`           | Populate database with demo project, API key, and subscription  |
+| `pnpm db:verify`         | Run database and outbox verification script                     |
+| `pnpm docker:up`         | Start local PostgreSQL and Redis containers                     |
+| `pnpm docker:down`       | Stop local development containers                               |
+| `pnpm docker:prod:up`    | Build and start full production Docker Compose stack            |
+| `pnpm docker:prod:down`  | Stop production Docker Compose stack                            |
 
 ---
 

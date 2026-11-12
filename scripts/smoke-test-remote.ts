@@ -4,7 +4,8 @@
  *
  * Unlike scripts/smoke-test.ts it needs no database access, no local webhook receiver and no
  * worker port: it uses only what a real client can reach, plus (optionally) the admin CLI to
- * mint a throwaway API key. It verifies the hardening in place, but does NOT prove that a
+ * mint a throwaway API key. It verifies the hardening in place and that the dashboard, the stats
+ * endpoint and the sandbox endpoint respond as designed, but does NOT prove that a
  * webhook is delivered, because production only delivers to public URLs. Delivery is covered by
  * `pnpm smoke-test` and the integration tests.
  *
@@ -29,6 +30,15 @@ interface JsonBody {
   status?: string;
   isDuplicate?: boolean;
   dependencies?: { postgres?: { status?: string }; redis?: { status?: string } };
+  id?: string;
+  deliveries?: unknown;
+  windowHours?: number;
+  eventsTotal?: number;
+  deliveriesTotal?: number;
+  deliveriesByStatus?: Record<string, number>;
+  successRate?: number | null;
+  recentFailures?: unknown;
+  apiKey?: string;
 }
 
 const API_URL = (process.env.API_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -99,7 +109,7 @@ async function main(): Promise<void> {
   console.log('======================================================================');
 
   // 1. Liveness / readiness
-  console.log('[1/8] Health and readiness');
+  console.log('[1/11] Health and readiness');
   const health = await api('/v1/health');
   check('GET /v1/health returns 200', health.status === 200, `got ${health.status}`);
   const ready = await api('/v1/ready');
@@ -112,7 +122,7 @@ async function main(): Promise<void> {
   );
 
   // 2. Security headers
-  console.log('[2/8] Security headers');
+  console.log('[2/11] Security headers');
   check(
     'X-Content-Type-Options: nosniff',
     health.headers.get('x-content-type-options') === 'nosniff',
@@ -121,7 +131,7 @@ async function main(): Promise<void> {
   check('X-Powered-By absent', !health.headers.has('x-powered-by'));
 
   // 3. Obtain an API key
-  console.log('[3/8] API key');
+  console.log('[3/11] API key');
   let apiKey = process.env.SMOKE_API_KEY || '';
   let createdKeyId: string | null = null;
   if (!apiKey) {
@@ -152,7 +162,7 @@ async function main(): Promise<void> {
 
   try {
     // 4. Authentication
-    console.log('[4/8] Authentication');
+    console.log('[4/11] Authentication');
     check('no key -> 401', (await api('/v1/subscriptions')).status === 401);
     check(
       'invalid key -> 401',
@@ -163,7 +173,7 @@ async function main(): Promise<void> {
     check('valid key -> 200', authed.status === 200, `got ${authed.status}`);
 
     // 5. SSRF protection
-    console.log('[5/8] SSRF protection on subscription targets');
+    console.log('[5/11] SSRF protection on subscription targets');
     for (const target of [
       'http://169.254.169.254/latest/meta-data',
       'http://127.0.0.1:4000/hook',
@@ -176,7 +186,7 @@ async function main(): Promise<void> {
     }
 
     // 6. Event ingestion and idempotency
-    console.log('[6/8] Event ingestion and idempotency');
+    console.log('[6/11] Event ingestion and idempotency');
     const idempotencyKey = `smoke-${randomUUID()}`;
     const event = {
       eventType: 'smoke.test',
@@ -199,8 +209,100 @@ async function main(): Promise<void> {
       `got ${second.status}`,
     );
 
-    // 7. Metrics protection
-    console.log('[7/8] /metrics protection');
+    // 7. Event detail and stats (the dashboard's data sources)
+    console.log('[7/11] Event detail and stats');
+    const eventId = first.json?.id ?? '';
+    const detail = await api(`/v1/events/${eventId}`, { headers: auth });
+    check(
+      'GET /v1/events/:id -> 200 and includes a deliveries array',
+      detail.status === 200 && Array.isArray(detail.json?.deliveries),
+      `got ${detail.status}`,
+    );
+    check('GET /v1/stats without a key -> 401', (await api('/v1/stats')).status === 401);
+    const stats = await api('/v1/stats?windowHours=24', { headers: auth });
+    const counts = stats.json?.deliveriesByStatus;
+    check(
+      'GET /v1/stats -> 200 with the documented shape',
+      stats.status === 200 &&
+        stats.json?.windowHours === 24 &&
+        typeof stats.json?.eventsTotal === 'number' &&
+        typeof stats.json?.deliveriesTotal === 'number' &&
+        ['PENDING', 'IN_FLIGHT', 'COMPLETED', 'FAILED', 'DEAD_LETTER'].every(
+          (k) => typeof counts?.[k] === 'number',
+        ) &&
+        (stats.json?.successRate === null || typeof stats.json?.successRate === 'number') &&
+        Array.isArray(stats.json?.recentFailures),
+      `got ${stats.status}`,
+    );
+    check(
+      'the event ingested above is counted in /v1/stats',
+      (stats.json?.eventsTotal ?? 0) >= 1,
+      `eventsTotal=${stats.json?.eventsTotal}`,
+    );
+    check(
+      'GET /v1/stats?windowHours=0 -> 400',
+      (await api('/v1/stats?windowHours=0', { headers: auth })).status === 400,
+    );
+
+    // 8. Dashboard served by the API at /dashboard
+    console.log('[8/11] Dashboard');
+    const page = await api('/dashboard/');
+    check(
+      'GET /dashboard/ -> 200 HTML, not cached',
+      page.status === 200 &&
+        (page.headers.get('content-type') ?? '').includes('text/html') &&
+        page.headers.get('cache-control') === 'no-cache',
+      `got ${page.status}`,
+    );
+    const spa = await api('/dashboard/events');
+    check(
+      'client-side route /dashboard/events falls back to index.html',
+      spa.status === 200 && spa.text === page.text,
+      `got ${spa.status}`,
+    );
+    const csp = page.headers.get('content-security-policy') ?? '';
+    check(
+      "dashboard CSP is same-origin (default-src 'self', no unsafe-eval, no remote hosts)",
+      csp.includes("default-src 'self'") &&
+        !csp.includes('unsafe-eval') &&
+        !/https?:\/\//.test(csp),
+      csp || 'no CSP header',
+    );
+    // Every script, stylesheet and icon the page loads must be a same-origin path.
+    const refs = [...page.text.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((m) => m[1] ?? '');
+    check(
+      'index.html loads no third-party resources',
+      refs.length > 0 && refs.every((r) => r.startsWith('/dashboard/')),
+      refs.filter((r) => !r.startsWith('/dashboard/')).join(', '),
+    );
+    const asset = refs.find((r) => r.startsWith('/dashboard/assets/'));
+    const assetRes = asset ? await api(asset) : null;
+    check(
+      'hashed asset is served with an immutable cache header',
+      assetRes?.status === 200 &&
+        (assetRes.headers.get('cache-control') ?? '').includes('immutable'),
+      assetRes ? `got ${assetRes.status}` : 'no asset referenced',
+    );
+    check(
+      'a missing dashboard file returns 404, not the SPA',
+      (await api('/dashboard/assets/does-not-exist.js')).status === 404,
+    );
+
+    // 9. Sandbox endpoint: off in production by default, but it must answer cleanly either way
+    console.log('[9/11] Sandbox');
+    const sandbox = await api('/v1/sandbox/session', { method: 'POST' });
+    if (sandbox.status === 404) {
+      check('sandbox mode is off: POST /v1/sandbox/session -> 404', true);
+    } else {
+      check(
+        'sandbox mode is on: POST /v1/sandbox/session -> 201 with a key',
+        sandbox.status === 201 && typeof sandbox.json?.apiKey === 'string',
+        `got ${sandbox.status}`,
+      );
+    }
+
+    // 10. Metrics protection
+    console.log('[10/11] /metrics protection');
     const anon = await api('/v1/metrics');
     check(
       '/v1/metrics without token is rejected (401, or 404 when disabled)',
@@ -221,7 +323,7 @@ async function main(): Promise<void> {
     }
 
     // 8. Internal surfaces closed
-    console.log('[8/8] Internal surfaces');
+    console.log('[11/11] Internal surfaces');
     if (process.env.CHECK_WORKER_PORT_CLOSED === 'false') {
       console.log('       - skipped (CHECK_WORKER_PORT_CLOSED=false)');
     } else {
