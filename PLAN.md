@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **nearly complete**:
 the stack is live at `https://40-81-24-8.sslip.io`, the fallback doc is written, automatic deploys from CI work, the
-Phase 3 details are archived (task 8), and CI is green after the flaky-test fix (run `43285625950`). **Remaining:** record
+Phase 3 details are archived (task 8), and CI is green after the flaky-test fix (runs `43285625950`, `43287724411`). **Remaining:** record
 the credit burn rate (waits on Azure Cost Management data).
 
 ---
@@ -139,8 +139,9 @@ stops newer pushes from cancelling runs on `main`.
 - [ ] **Credit burn rate and expected end date** recorded in `docs/deploy-azure-student.md` (waits on the first Azure Cost
       Management data). This is the only unchecked Phase 3 acceptance criterion. A budget alert exists (8,500 INR, alerts at
       50% and 80%) and no payment method is attached.
-- [x] **Flaky-test fix seen green in CI** (run `43285625950`, 2026-11-12, with `--concurrency=1`). One green run, so it is
-      evidence rather than proof; the failure appeared in 4 of 12 local runs before the fix.
+- [x] **Flaky-test fix seen green in CI** (runs `43285625950` and `43287724411`, 2026-11-12, with `--concurrency=1`,
+      each including the SSH deploy). Two green runs are evidence rather than proof; the failure appeared in 4 of 12 local
+      runs before the fix.
 - [x] **Baselines refreshed** (section 3): all gates clean, 200 unit and 91 integration tests passing.
 
 **Notes that still matter**
