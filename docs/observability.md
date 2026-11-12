@@ -8,8 +8,8 @@ This document describes the observability infrastructure implemented in EventFor
 
 EventForge exposes native, zero-dependency Prometheus exposition format (`version 0.0.4`) endpoints across both runtimes:
 
-- **API Metrics**: `http://localhost:3000/metrics` or `http://localhost:3000/v1/metrics`
-- **Worker Metrics**: `http://localhost:3001/metrics` or `http://localhost:3001/v1/metrics`
+- **API Metrics**: `http://localhost:3000/metrics` or `http://localhost:3000/v1/metrics`. If `METRICS_TOKEN` is set, send `Authorization: Bearer <token>`. In production with no token the endpoint is disabled (404).
+- **Worker Metrics**: `http://localhost:3001/metrics` or `http://localhost:3001/v1/metrics`. In the production compose stack this port is not published; scrape it from inside the Docker network (e.g. `worker:3001`).
 
 ### Metric Definitions
 
@@ -24,6 +24,8 @@ EventForge exposes native, zero-dependency Prometheus exposition format (`versio
 | `eventforge_deliveries_failed_total`       | Counter   | `error_code`, `retryable`              | Webhook delivery attempts that resulted in errors                                       | Separates transient retries from terminal dead-letters.                        |
 | `eventforge_deliveries_retries_total`      | Counter   | `attempt_number`                       | Delivery jobs re-enqueued into BullMQ for backoff retries                               | Tracks scheduled retry volume by attempt sequence.                             |
 | `eventforge_deliveries_dead_letter_total`  | Counter   | `reason`                               | Deliveries permanently failed and transitioned to `DEAD_LETTER`                         | Triggered by exhaustion (`max_attempts_exceeded`), 4xx errors, or SSRF blocks. |
+| `eventforge_deliveries_throttled_total`    | Counter   | _none_                                 | Deliveries deferred to a later slot by per-subscription `rateLimitPerSecond`            | Deferral does not consume a retry attempt. Worker only.                        |
+| `eventforge_retention_deleted_total`       | Counter   | `table`                                | Rows deleted by the retention job (`deliveries`, `events`)                              | Cascaded attempts/outbox rows are not counted separately. Worker only.         |
 | `eventforge_webhook_duration_seconds`      | Histogram | _none_                                 | Outbound webhook HTTP round-trip latency in seconds                                     | Measures client connection, TLS handshake, transmission, and response time.    |
 | `eventforge_deliveries_in_flight_gauge`    | Gauge     | _none_                                 | Deliveries currently claimed and active in worker memory                                | Node-local process gauge. Sum across worker instances for cluster-wide count.  |
 | `eventforge_queue_waiting_jobs_gauge`      | Gauge     | _none_                                 | Jobs waiting in BullMQ Redis queue to be claimed                                        | Scraped dynamically from Redis.                                                |

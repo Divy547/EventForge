@@ -14,8 +14,12 @@ EventForge is a production-grade, reliable event-processing and webhook delivery
 - **SSRF & DNS-Rebinding Protection**: Validates target URLs at subscription time and performs socket-level IP address verification at connection time before sending payloads.
 - **Consumer SDK (`@eventforge/sdk`)**: Lightweight TypeScript SDK for downstream webhook receivers, featuring constant-time HMAC-SHA256 verification, replay attack tolerance, and in-memory idempotency deduplication.
 - **W3C Distributed Tracing**: Full end-to-end trace propagation (`traceparent`) from API ingestion through PostgreSQL outbox and BullMQ to outbound HTTP webhook headers.
+- **API Protection**: Redis-backed rate limiting per API key and per IP (`429` + `Retry-After`), `helmet` headers, an explicit CORS allow-list, and a token-protected `/metrics`.
+- **Per-Subscription Throttling**: `rateLimitPerSecond` is enforced in the worker without consuming retry attempts.
+- **Data Retention**: a worker job deletes completed deliveries and processed events after `RETENTION_DAYS`, never touching unfinished or dead-lettered work.
+- **Tenant Admin CLI**: create projects, and create, list, revoke and rotate API keys.
 - **Full Observability**: Prometheus metrics at `/v1/metrics`, structured JSON logging with automated redaction of sensitive credentials, and container readiness probes.
-- **Production Containerization**: Multi-stage Dockerfiles (`node:24-alpine`) with non-root runtime users (`node`), minimal ~77 MB layer footprints, and standalone production Docker Compose.
+- **Production Containerization**: Multi-stage Dockerfiles (`node:24-alpine`) with non-root runtime users (`node`), a one-off `migrate` service that runs before the API and worker, and a standalone production Docker Compose file. Measured image size: ~73 MB gzip-compressed / ~369 MB on disk (see `docs/deployment.md`).
 
 ---
 
@@ -117,20 +121,24 @@ docker build -f apps/worker/Dockerfile -t eventforge-worker:latest .
 
 EventForge provides a production-hardened compose specification in `docker-compose.prod.yml`:
 
-- Keeps database and Redis ports private inside `eventforge_prod_net`.
-- Binds `WORKER_HOST=0.0.0.0` for container metrics scraping.
+- Keeps database, Redis and worker ports private inside `eventforge_prod_net`; only the API port is published.
+- Requires `POSTGRES_PASSWORD` (refuses to start without it) and protects API `/metrics` with `METRICS_TOKEN`.
+- Runs a one-off `migrate` service first; `api` and `worker` start only after it succeeds.
 - Rejects insecure settings (`ALLOW_LOCAL_WEBHOOKS=false` enforced).
 
 ```bash
-# 1. Setup production environment
+# 1. Setup production environment (.env.production is git-ignored)
 cp .env.production.example .env.production
-# Edit .env.production with your secure database password
+# Edit .env.production: set POSTGRES_PASSWORD (openssl rand -hex 24) and METRICS_TOKEN
 
-# 2. Launch production stack
+# 2. Launch production stack (migrations are applied automatically)
 pnpm docker:prod:up
 
-# 3. Apply migrations in production
-pnpm db:migrate:prod
+# 3. Create your first project and API key (printed once)
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
+  node packages/database/dist/scripts/admin.js project:create --name "Acme" --slug acme
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
+  node packages/database/dist/scripts/admin.js key:create --project acme --name "prod"
 ```
 
 For complete backup, restore, rotation, and scaling procedures, see [`docs/deployment.md`](docs/deployment.md).
@@ -141,33 +149,35 @@ For complete backup, restore, rotation, and scaling procedures, see [`docs/deplo
 
 All workspace commands are orchestrated through Turborepo from the root:
 
-| Command                 | Description                                                    |
-| :---------------------- | :------------------------------------------------------------- |
-| `pnpm build`            | Compile all packages and applications in topological order     |
-| `pnpm dev`              | Run development servers in watch mode with streaming logs      |
-| `pnpm dev:api`          | Start NestJS API in hot-reload development mode                |
-| `pnpm dev:worker`       | Start NestJS Background Worker in hot-reload mode              |
-| `pnpm start:api`        | Start compiled NestJS API production server                    |
-| `pnpm start:worker`     | Start compiled NestJS Background Worker production server      |
-| `pnpm lint`             | Run ESLint across all workspace files                          |
-| `pnpm lint:fix`         | Automatically fix ESLint warnings and errors                   |
-| `pnpm typecheck`        | Run TypeScript typechecking across all workspace packages      |
-| `pnpm test`             | Run all test suites across all packages                        |
-| `pnpm test:unit`        | Run fast isolated unit tests                                   |
-| `pnpm test:integration` | Run database integration tests against real PostgreSQL & Redis |
-| `pnpm format:check`     | Verify formatting with Prettier                                |
-| `pnpm format:write`     | Format codebase with Prettier                                  |
-| `pnpm demo`             | Run automated end-to-end lifecycle demonstration               |
-| `pnpm load-test`        | Run 5-scenario performance baseline & load test                |
-| `pnpm smoke-test`       | Run 11-step production deployment smoke test                   |
-| `pnpm db:migrate`       | Execute pending SQL migrations against PostgreSQL              |
-| `pnpm db:migrate:prod`  | Execute migrations using compiled production runner            |
-| `pnpm db:seed`          | Populate database with demo project, API key, and subscription |
-| `pnpm db:verify`        | Run database and outbox verification script                    |
-| `pnpm docker:up`        | Start local PostgreSQL and Redis containers                    |
-| `pnpm docker:down`      | Stop local development containers                              |
-| `pnpm docker:prod:up`   | Build and start full production Docker Compose stack           |
-| `pnpm docker:prod:down` | Stop production Docker Compose stack                           |
+| Command                  | Description                                                    |
+| :----------------------- | :------------------------------------------------------------- |
+| `pnpm build`             | Compile all packages and applications in topological order     |
+| `pnpm dev`               | Run development servers in watch mode with streaming logs      |
+| `pnpm dev:api`           | Start NestJS API in hot-reload development mode                |
+| `pnpm dev:worker`        | Start NestJS Background Worker in hot-reload mode              |
+| `pnpm start:api`         | Start compiled NestJS API production server                    |
+| `pnpm start:worker`      | Start compiled NestJS Background Worker production server      |
+| `pnpm lint`              | Run ESLint across all workspace files                          |
+| `pnpm lint:fix`          | Automatically fix ESLint warnings and errors                   |
+| `pnpm typecheck`         | Run TypeScript typechecking across all workspace packages      |
+| `pnpm test`              | Run all test suites across all packages                        |
+| `pnpm test:unit`         | Run fast isolated unit tests                                   |
+| `pnpm test:integration`  | Run database integration tests against real PostgreSQL & Redis |
+| `pnpm format:check`      | Verify formatting with Prettier                                |
+| `pnpm format:write`      | Format codebase with Prettier                                  |
+| `pnpm demo`              | Run automated end-to-end lifecycle demonstration               |
+| `pnpm load-test`         | Run 5-scenario performance baseline & load test                |
+| `pnpm smoke-test`        | Run 11-step smoke test (spawns the built API/worker locally)   |
+| `pnpm smoke-test:remote` | HTTP-only smoke test of a running prod-config stack or URL     |
+| `pnpm db:migrate`        | Execute pending SQL migrations against PostgreSQL              |
+| `pnpm db:migrate:prod`   | Run the compiled migration runner against `DATABASE_URL`       |
+| `pnpm admin <cmd>`       | Admin CLI: `project:create`, `key:create/list/revoke/rotate`   |
+| `pnpm db:seed`           | Populate database with demo project, API key, and subscription |
+| `pnpm db:verify`         | Run database and outbox verification script                    |
+| `pnpm docker:up`         | Start local PostgreSQL and Redis containers                    |
+| `pnpm docker:down`       | Stop local development containers                              |
+| `pnpm docker:prod:up`    | Build and start full production Docker Compose stack           |
+| `pnpm docker:prod:down`  | Stop production Docker Compose stack                           |
 
 ---
 

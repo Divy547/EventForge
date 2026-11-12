@@ -10,8 +10,8 @@ EventForge uses multi-stage Docker builds based on `node:24-alpine` to minimize 
 
 ### Key Characteristics
 
-- **Multi-Stage Build**: Development tools (TypeScript compiler, Turbo, test frameworks) are used exclusively in the builder stage. Only compiled JavaScript (`dist/`), migrations, and pruned production dependencies (`pnpm prune --prod`) are copied to the runtime image.
-- **Minimal Image Size**: Compressed runtime images are approximately ~77 MB (~370 MB uncompressed virtual size).
+- **Multi-Stage Build**: Development tools (TypeScript compiler, Turbo, test frameworks) are used exclusively in the builder stage. Only compiled JavaScript (`dist/`), migrations, and production-only dependencies (reinstalled with `pnpm install --prod` after the build) are copied to the runtime image.
+- **Image Size** (measured 2026-11-12 with `docker save <image> | gzip | wc -c` and `docker image ls`): ~73 MB gzip-compressed export and ~369 MB on disk, for both API and worker. The `node:24-alpine` base accounts for ~232 MB of the on-disk size.
 - **Non-Root Execution**: Containers execute under the unprivileged `node` user (`UID 1000`, `GID 1000`).
 - **Signal Handling**: NestJS lifecycle hooks (`enableShutdownHooks()`) capture `SIGTERM` and `SIGINT`, cleanly terminating BullMQ workers, HTTP servers, and database connection pools.
 - **Native Health Checks**: Uses Node.js native `fetch` against `/v1/ready` without requiring external binaries (`curl` / `wget`).
@@ -38,13 +38,17 @@ A standalone production configuration is provided in `docker-compose.prod.yml`.
 | :--------- | :------------------------- | :------------ | :----------------- | :----------------------------------------- |
 | `postgres` | `postgres:16-alpine`       | `5432`        | _(None - Private)_ | Transactional event storage & outbox       |
 | `redis`    | `redis:7-alpine`           | `6379`        | _(None - Private)_ | BullMQ delivery queue & retries            |
+| `migrate`  | `eventforge-api:latest`    | _(none)_      | _(None - Private)_ | One-off job: applies DB migrations, exits  |
 | `api`      | `eventforge-api:latest`    | `3000`        | `3000`             | Public REST API & Webhook ingestion        |
-| `worker`   | `eventforge-worker:latest` | `3001`        | `3001`             | Background outbox poller & HTTP dispatcher |
+| `worker`   | `eventforge-worker:latest` | `3001`        | _(None - Private)_ | Background outbox poller & HTTP dispatcher |
 
 ### Security Boundaries
 
 - PostgreSQL and Redis ports are kept internal to the isolated Docker network `eventforge_prod_net`.
-- `WORKER_HOST` is bound to `0.0.0.0` inside the container to allow health monitoring and Prometheus scraping across the internal network.
+- The worker's health/metrics server (`:3001`) is **not published** to the host. `WORKER_HOST=0.0.0.0` only makes it reachable from other containers on the internal network (it is used by the container's own healthcheck).
+- The API's `/metrics` requires `Authorization: Bearer $METRICS_TOKEN`; if `METRICS_TOKEN` is unset in production the endpoint returns `404`.
+- `POSTGRES_PASSWORD` is required: `docker compose` refuses to start without it. Use a value without URL-special characters (e.g. `openssl rand -hex 24`) since it is embedded in the connection string.
+- The compose file sets `name: eventforge-prod`, so it never shares a project with the development `docker-compose.yml`.
 - `ALLOW_LOCAL_WEBHOOKS` is strictly enforced to `false`.
 
 ### Starting Production Services
@@ -55,10 +59,10 @@ cp .env.production.example .env.production
 # Edit .env.production with your secure credentials
 
 # 2. Build and launch services in detached mode
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 
 # 3. View streaming logs
-docker compose -f docker-compose.prod.yml logs -f
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f
 ```
 
 ---
@@ -68,15 +72,35 @@ docker compose -f docker-compose.prod.yml logs -f
 ### Migration Execution
 
 Migrations are managed with Drizzle ORM and stored in `packages/database/migrations/`.
-EventForge **never** runs destructive migrations automatically at application startup. Migrations must be applied explicitly during deployment.
+The API and worker processes **never** migrate at startup. Instead, `docker-compose.prod.yml` defines a one-off `migrate` service (the API image running `packages/database/dist/scripts/migrate.js`). `api` and `worker` declare `depends_on: migrate: condition: service_completed_successfully`, so on every `docker compose up` migrations run first, and a failed migration stops the deploy rather than starting new code against an old schema. On an empty database this creates the full schema; on an up-to-date database it is a no-op.
 
 ```bash
-# Run migrations using the compiled Node.js runner (recommended for production)
-pnpm db:migrate:prod
-
-# Alternatively, inside container environment
-docker compose -f docker-compose.prod.yml run --rm api node packages/database/dist/scripts/migrate.js
+# Re-run migrations manually if needed
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
 ```
+
+Tenant projects and API keys are created with the admin CLI inside the running API container:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
+  node packages/database/dist/scripts/admin.js project:create --name "Acme" --slug acme
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api \
+  node packages/database/dist/scripts/admin.js key:create --project acme --name "prod"
+```
+
+### Smoke Testing a Running Stack
+
+`pnpm smoke-test:remote` verifies a running production-configured stack using only its public HTTP surface (plus the admin CLI to mint a throwaway key, which it revokes afterwards). It checks health and readiness, security headers, authentication (401 without or with an invalid key), SSRF rejection of private targets, event ingestion and idempotency, `/metrics` protection, and that the worker port is closed.
+
+```bash
+# Against the local production compose stack
+METRICS_TOKEN=<your token> pnpm smoke-test:remote
+
+# Against a deployed server (create a key with the admin CLI first)
+API_URL=https://your-host SMOKE_API_KEY=<key> METRICS_TOKEN=<token> pnpm smoke-test:remote
+```
+
+It does **not** prove webhook delivery, because production only delivers to public URLs (local targets are blocked by SSRF protection). Delivery is covered by `pnpm smoke-test` (which spawns the built API and worker locally) and the integration tests.
 
 ### PostgreSQL Backup Procedure
 
@@ -84,11 +108,11 @@ Run a consistent, atomic snapshot using `pg_dump`:
 
 ```bash
 # Create custom-format compressed backup
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
   pg_dump -U postgres -d eventforge -Fc > "eventforge_backup_$(date +%Y%m%d_%H%M%S).dump"
 
 # Create plain SQL schema + data backup
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
   pg_dump -U postgres -d eventforge --clean --if-exists > "eventforge_backup_$(date +%Y%m%d_%H%M%S).sql"
 ```
 
@@ -98,7 +122,7 @@ Restore from a custom-format dump using `pg_restore`:
 
 ```bash
 # 1. Drop existing connections and restore
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U postgres -d eventforge --clean --if-exists < eventforge_backup_YYYYMMDD_HHMMSS.dump
 
 # 2. Verify schema and table counts
@@ -154,7 +178,7 @@ To rotate an endpoint signing secret:
 
 ### Prometheus Metrics
 
-Both the API and background worker expose Prometheus metrics at `/v1/metrics`:
+Both runtimes expose Prometheus metrics at `/v1/metrics`. The API endpoint requires the `METRICS_TOKEN` bearer token in production; the worker endpoint is reachable only from inside the Docker network (it is not published):
 
 - **API Metrics** (`:3000/v1/metrics`):
   - `eventforge_http_requests_total`
@@ -181,8 +205,8 @@ Both the API and background worker expose Prometheus metrics at `/v1/metrics`:
 
 If `eventforge_outbox_pending_gauge` increases monotonically:
 
-1. Check worker logs: `docker compose -f docker-compose.prod.yml logs worker`.
-2. Verify Redis connectivity: `docker compose -f docker-compose.prod.yml exec redis redis-cli ping`.
+1. Check worker logs: `docker compose --env-file .env.production -f docker-compose.prod.yml logs worker`.
+2. Verify Redis connectivity: `docker compose --env-file .env.production -f docker-compose.prod.yml exec redis redis-cli ping`.
 3. Check PostgreSQL connection pool: verify `DATABASE_MAX_CONNECTIONS` is sufficient.
 
 ### Dead-Letter Queue Triage

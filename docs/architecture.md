@@ -40,13 +40,23 @@ To prevent dual-write inconsistencies between PostgreSQL and message brokers (e.
 2. **Deterministic Conflict Handling**: Concurrent requests with identical `(project_id, idempotency_key)` are resolved atomically using PostgreSQL `ON CONFLICT (project_id, idempotency_key) DO NOTHING`. The concurrent request selects the existing committed event and returns `HTTP 202` without triggering duplicate outbox records or constraint violations.
 3. **Safe Outbox Claiming**: The worker polls pending outbox records using:
    ```sql
-   SELECT * FROM outbox_records
-   WHERE status = 'PENDING'
-   ORDER BY created_at ASC
-   LIMIT $1
-   FOR UPDATE SKIP LOCKED;
+   WITH candidates AS (
+     SELECT id FROM outbox_records
+     WHERE status = 'PENDING'
+        OR (status = 'PROCESSING' AND claimed_at < NOW() - $timeout)   -- claiming worker died
+        OR (status = 'FAILED' AND attempts < $max_attempts
+            AND updated_at < NOW() - $timeout)                          -- retry after failure
+     ORDER BY created_at ASC
+     LIMIT $batch_size
+     FOR UPDATE SKIP LOCKED
+   )
+   UPDATE outbox_records
+   SET status = 'PROCESSING', claimed_by = $worker, claimed_at = NOW(),
+       attempts = attempts + 1, updated_at = NOW()
+   FROM candidates WHERE outbox_records.id = candidates.id
+   RETURNING outbox_records.*;
    ```
-   This prevents race conditions between multiple worker instances without table-level locking.
+   Claim and status change happen in one statement, so multiple worker instances never claim the same record, without table-level locking. Records stuck in `PROCESSING` (worker crashed) or `FAILED` (retryable) are reclaimed after `OUTBOX_LOCK_TIMEOUT_MS`.
 4. **Fan-Out to Subscriptions**: For each outbox record, the poller matches active subscriptions by event type pattern (`order.*`, `*`, exact match) and inserts initial `deliveries` records in state `PENDING`.
 5. **Terminal Outbox State**: If outbox processing encounters persistent unexpected failures, records transition to `DEAD_LETTER` after 10 consecutive attempts, incrementing `eventforge_outbox_dead_letter_total`.
 
@@ -59,9 +69,10 @@ stateDiagram-v2
     [*] --> PENDING: Fan-out from Outbox
     PENDING --> IN_FLIGHT: Claimed by Worker Processor
     IN_FLIGHT --> COMPLETED: 2xx Response from Target
-    IN_FLIGHT --> FAILED: 4xx (429/timeout), 5xx, Network Error
-    IN_FLIGHT --> DEAD_LETTER: Non-retryable (400, 404, SSRF blocked)
-    IN_FLIGHT --> PENDING: Worker Crash / Lease Timeout (Recovery)
+    IN_FLIGHT --> FAILED: 429, 5xx, timeout, Network Error
+    IN_FLIGHT --> DEAD_LETTER: Non-retryable (other 4xx, SSRF blocked)
+    IN_FLIGHT --> FAILED: Worker Crash / Lease Timeout (Recovery, WORKER_CRASHED attempt)
+    IN_FLIGHT --> DEAD_LETTER: Lease Timeout on final attempt
     FAILED --> IN_FLIGHT: Backoff Retry Due
     FAILED --> DEAD_LETTER: Max Retries Exceeded (5/5)
     DEAD_LETTER --> PENDING: Manual / Batch Replay API
@@ -70,26 +81,28 @@ stateDiagram-v2
 
 ### State Definitions
 
-| State         | Description                                                                                                                                                        |
-| :------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PENDING`     | Delivery record created, awaiting BullMQ worker pickup or outbox fanout.                                                                                           |
-| `IN_FLIGHT`   | Worker currently holds an active lease (`lease_expires_at = now() + 60s`) and is dispatching the HTTP request.                                                     |
-| `COMPLETED`   | Destination server acknowledged the delivery with HTTP `2xx`. Terminal success state.                                                                              |
-| `FAILED`      | Transient error occurred (HTTP `5xx`, `429`, connection reset, timeout). Scheduled for exponential backoff retry via BullMQ delayed job.                           |
-| `DEAD_LETTER` | Terminal failure state. Reached when attempts reach `max_attempts` (default 5) or on non-retryable errors (e.g. `400 Bad Request`, `404 Not Found`, SSRF blocked). |
+| State         | Description                                                                                                                                                                                                                                                                                                                |
+| :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PENDING`     | Delivery record created, awaiting BullMQ worker pickup or outbox fanout.                                                                                                                                                                                                                                                   |
+| `IN_FLIGHT`   | A worker has claimed the delivery and is dispatching the HTTP request. The lease is derived from `deliveries.updated_at`: if it is older than `DELIVERY_LEASE_TIMEOUT_MS` (default 60s, always at least `WEBHOOK_TIMEOUT_MS` + 30s) the delivery is treated as abandoned and recovered. There is no separate lease column. |
+| `COMPLETED`   | Destination server acknowledged the delivery with HTTP `2xx`. Terminal success state.                                                                                                                                                                                                                                      |
+| `FAILED`      | Transient error occurred (HTTP `5xx`, `429`, connection reset, timeout). Scheduled for exponential backoff retry via BullMQ delayed job.                                                                                                                                                                                   |
+| `DEAD_LETTER` | Terminal failure state. Reached when attempts reach `max_attempts` (default 5) or on non-retryable errors (e.g. `400 Bad Request`, `404 Not Found`, SSRF blocked).                                                                                                                                                         |
 
 ---
 
 ## 4. Exponential Backoff & Retry Policies
 
-When a delivery encounters a retryable error, EventForge schedules the next attempt using exponential backoff with full jitter to avoid the thundering herd problem:
+When a delivery encounters a retryable error, EventForge schedules the next attempt using exponential backoff with **full jitter** to avoid the thundering herd problem:
 
-$$\text{delay} = \min(\text{maxDelayMs}, \text{baseDelayMs} \times 2^{\text{attempt} - 1}) + \text{jitter}$$
+$$\text{delay} = \text{random}\left[0,\ \min(\text{maxDelayMs},\ \text{baseDelayMs} \times 2^{\text{attempt} - 1})\right)$$
 
 - **Base Delay**: 1,000 ms
-- **Max Delay**: 300,000 ms (5 minutes)
-- **Retryable Errors**: HTTP `500`, `502`, `503`, `504`, `429 Too Many Requests`, socket timeouts, network resets (`ECONNRESET`).
-- **Non-Retryable Errors**: HTTP `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, SSRF validation blocks (`SSRF_BLOCKED`). These transition directly to `DEAD_LETTER` on first failure.
+- **Max Delay**: 86,400,000 ms (24 hours)
+- **`Retry-After`**: if the receiver sends one (seconds or HTTP date), it is used instead of the computed delay, clamped to between 1 second and 24 hours.
+- **Retryable**: HTTP `429`, any HTTP `5xx`, and transport errors `TIMEOUT`, `ETIMEDOUT`, `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `NETWORK_ERROR`.
+- **Non-Retryable** (straight to `DEAD_LETTER` on first failure): every other `4xx` (e.g. `400`, `401`, `403`, `404`), `SSRF_BLOCKED`, `INVALID_URL`, `UNSUPPORTED_PROTOCOL`, and any unclassified error.
+- **Exhaustion**: once `attempts_count` reaches `max_attempts` (default 5) the delivery moves to `DEAD_LETTER` regardless of error type.
 
 ---
 
@@ -105,7 +118,7 @@ When downstream receiver outages are resolved, operators can replay dead-lettere
 1. **Row-Level Locking**: Replays acquire a `FOR UPDATE` lock on the target delivery.
 2. **State Verification**: Only deliveries in `DEAD_LETTER` status can be replayed. Non-DLQ records are rejected with `409 Conflict`.
 3. **Attempt History Preservation**: Existing attempt records in `delivery_attempts` are **never deleted**.
-4. **Attempt Headroom**: `max_attempts` is atomically incremented by `additional_attempts` (default +3):
+4. **Attempt Headroom**: `max_attempts` is reset to `attempts_count + additional_attempts` (default +3, clamped to 1–10):
    $$\text{max\_attempts}_{\text{new}} = \text{attempts\_count} + \text{additional\_attempts}$$
 5. **Dual Scheduling**: The delivery is reset to `PENDING` and enqueued onto BullMQ. If Redis is temporarily unavailable, the background `StaleDeliveryRecoveryService` automatically claims overdue `PENDING` deliveries during database recovery passes.
 
@@ -180,3 +193,37 @@ EventForge maintains distributed trace context across the entire lifecycle:
 ```
 
 This enables complete end-to-end distributed tracing across microservice boundaries in OpenTelemetry-compatible APM tools (Datadog, Jaeger, Grafana Tempo).
+
+---
+
+## 8. API Protection
+
+- **Rate limiting** (`RateLimitGuard`): fixed-window counters in Redis (`INCR` + `PEXPIRE`), so limits are shared across API replicas. Two buckets are checked on every request, _before_ authentication: per client IP (`RATE_LIMIT_IP_MAX`, which also throttles guessing of invalid API keys) and, when a key is presented, per API key (`RATE_LIMIT_KEY_MAX`, keyed by the SHA-256 of the key so raw keys never reach Redis). Defaults: 1,200 / 2,400 requests per 60 s window. Exceeding either returns `429` with a `Retry-After` header. If Redis is unavailable the limiter fails open and logs a warning.
+- **Client IP behind a proxy**: set `TRUST_PROXY_HOPS` to the number of reverse proxies in front of the API; otherwise every request appears to come from the proxy.
+- **Security headers**: `helmet` defaults on every response (a relaxed CSP is applied only to the `/docs` Swagger UI); `X-Powered-By` is disabled.
+- **CORS**: explicit allow-list via `CORS_ALLOWED_ORIGINS` (comma-separated). Default is empty: browsers on other origins receive no CORS headers. Non-browser clients (no `Origin` header) are unaffected.
+- **`/metrics`**: when `METRICS_TOKEN` is set it requires `Authorization: Bearer <token>`. When unset it is open outside production and returns `404` in production. The worker's metrics server is not published by the production compose file.
+
+## 9. Per-Subscription Rate Limiting (`rateLimitPerSecond`)
+
+A subscription may set `rateLimitPerSecond` to cap deliveries to its endpoint. Throttling is performed in the worker before a delivery is claimed:
+
+1. The worker looks up the subscription's limit and atomically reserves the next free time slot in Redis (a GCRA-style scheduler in a Lua script, using Redis `TIME` so all workers share one clock). Up to `rateLimitPerSecond` deliveries may run immediately (burst); beyond that, slots are spaced `1000 / rateLimitPerSecond` ms apart.
+2. If the slot is in the future, the job is re-enqueued in BullMQ with that delay and a `throttleReserved` flag, and the delivery row is left untouched. Throttling therefore **never consumes a retry attempt** and never changes delivery state. The flag stops the job paying for a second slot when it runs.
+3. Each retry attempt reserves a fresh slot. Excess deliveries are delayed, not dropped. Throttled jobs are counted in `eventforge_deliveries_throttled_total`.
+4. If Redis is unavailable the throttle fails open.
+
+Limitation: a large backlog for a slow subscription is held as delayed BullMQ jobs, one per delivery, until their slots arrive.
+
+## 10. Data Retention
+
+The worker runs a retention job every `RETENTION_INTERVAL_MS` (default hourly). `RETENTION_DAYS` (default 30; `0` disables) sets the window.
+
+- Deletes `COMPLETED` deliveries whose `completed_at` is older than the window; their `delivery_attempts` cascade.
+- Deletes events older than the window **only if** no deliveries remain for them and their outbox record is `PROCESSED` (or absent); outbox rows cascade with the event.
+- **Never deletes** `PENDING`, `IN_FLIGHT`, `FAILED` or `DEAD_LETTER` deliveries, their attempt history, or events not yet fanned out, however old, so unfinished work and replayable dead letters are preserved.
+- Deletes run in batches of `RETENTION_BATCH_SIZE` using `FOR UPDATE SKIP LOCKED`, so replicas and live processing do not block each other. Deleted counts are exported as `eventforge_retention_deleted_total{table}`.
+
+## 11. Tenant Administration
+
+Projects and API keys are managed with the admin CLI (`pnpm admin <command>` in development, `pnpm admin:prod` or `node packages/database/dist/scripts/admin.js` in the production image): `project:create`, `project:list`, `key:create`, `key:list`, `key:revoke`, `key:rotate`. Raw keys are printed once; only SHA-256 hashes are stored. A revoked key receives `401` immediately; `key:rotate` revokes the old key and issues a new one atomically.
