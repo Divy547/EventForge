@@ -321,7 +321,8 @@ free -h | grep Swap            # 2.0Gi: the /etc/fstab entry worked
 curl -i https://40-81-24-8.sslip.io/v1/ready
 ```
 
-Passed on 2026-11-12: all five services came back `Up (healthy)` by themselves and the certificate was reused.
+Passed on 2026-11-12: all five services came back `Up (healthy)` by themselves, the certificate was reused, and
+the sandbox events from before the reboot were still in the dashboard.
 `migrate` does **not** run again after a reboot, because Docker only restarts containers that have a restart policy
 and `migrate` has `restart: 'no'`; migrations run on `dc up`, not on boot.
 
