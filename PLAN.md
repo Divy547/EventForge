@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 4: tasks 1 and 2 done, the load test and the README rewrite; Phase 3 only lacks the credit burn rate)_
+_Last updated: 2026-11-12 (Phase 4: tasks 1-3 done, the load test, the README rewrite and the claims pass; Phase 3 only lacks the credit burn rate)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -14,7 +14,8 @@ Phase 3 details are archived (task 8), and CI is green after the flaky-test fix 
 the credit burn rate (waits on Azure Cost Management data).
 
 Phase 4 (portfolio polish) is **in progress**: task 1 (load test, run locally) is done and led to a worker fix
-(`e0f9600`); task 2 (README rewrite, `325b2e1`) is done; tasks 3-5 are not started.
+(`e0f9600`); task 2 (README rewrite, `325b2e1`) is done; task 3 (claims pass, `8aac462`, `ead7b54`) is done in part
+(see its note); tasks 4-5 are not started.
 
 ---
 
@@ -159,8 +160,8 @@ stops newer pushes from cancelling runs on `main`.
 
 ### Phase 4 — Portfolio Polish & Interview Readiness
 
-**Status: 🔄 In progress (started 2026-11-12).** Tasks 1 and 2 are done; tasks 3-5 are not started and each needs
-"start with task N".
+**Status: 🔄 In progress (started 2026-11-12).** Tasks 1-3 are done (task 3 with a gap, see its note); tasks 4-5 are not
+started and each needs "start with task N".
 
 **Tasks**
 
@@ -172,10 +173,15 @@ stops newer pushes from cancelling runs on `main`.
    signing, two-point SSRF defence, the fan-out ceiling), and the local benchmark table with hardware and caveats. Each
    decision was checked against the code. **Not done:** a demo GIF or video (only the user can record it; optional, the live
    link meets the criterion). The live sandbox was not clicked through, to avoid creating a session on the public demo.
-3. Replace unverifiable marketing language with measured facts. The README is already clean; remaining targets:
-   `docs/architecture.md:3` ("production-grade", "high availability"; a single VM is not highly available) and any
-   "zero message loss" wording in the docs. Also fix or remove the unused `OUTBOX_LOCK_TIMEOUT_MS` setting (see task 1
-   results), and re-check `docs/README.md`, `docs/deployment.md` and `docs/observability.md` claim by claim.
+3. ✅ **Replace unverifiable marketing language with measured facts** (`8aac462`, `ead7b54`). Removed "production-grade",
+   "high availability", "zero message loss", "never vanish", "without fail" and similar from `docs/architecture.md`,
+   `docs/README.md`, the Swagger description, the landing-page feature card and an SDK comment. "Guaranteed delivery" now
+   reads as retry until `2xx` or dead-lettered. Tracing is described as propagation only (no spans exported).
+   `OUTBOX_LOCK_TIMEOUT_MS` was **removed** rather than wired (wiring it would have cut the reclaim window from 5 minutes to
+   30 s). Also corrected: key rotation (admin CLI, not SQL), the `/v1/ready` response shape, histogram buckets (5 ms to 10 s)
+   and two missing outbox dead-letter metrics. Details are under "Task 3 results".
+   **Gap:** `docs/architecture.md` sections 8-11 (rate limiting, per-subscription limits, retention, admin) and the Docker
+   details in `docs/deployment.md` were not traced sentence by sentence, so the "every claim is backed" criterion stays open.
 4. Concept walkthrough and Q&A practice covering every major component.
 5. Draft resume bullet points based on measured results.
 
@@ -211,15 +217,21 @@ enqueued.
 is fully delivered in under a second" and the ingestion numbers. The sustained fan-out ceiling is estimated at about 150
 events/s per worker (serial, 6-7 ms per record) but has **not** been measured after the fix.
 
-**Finding for task 3.** `OUTBOX_LOCK_TIMEOUT_MS` (default 30000) is defined in `packages/config/src/schema.ts` and exposed by
-the worker config, but the poller ignores it and passes a fixed `claimTimeoutMinutes: 5`. `docs/architecture.md` claimed the
-setting controls reclaiming; it now states the fixed 5 minutes. Decide in task 3 whether to wire the setting or remove it.
+**Task 3 results.** `OUTBOX_LOCK_TIMEOUT_MS` (default 30000) was defined but the poller ignored it and passed a fixed
+`claimTimeoutMinutes: 5`; the setting is now gone and `docs/architecture.md` states the fixed 5 minutes.
+
+**Finding: the default retry budget is about 15 seconds.** With `max_attempts` 5 and a 1 s base delay, the four waits have
+ceilings of 1, 2, 4 and 8 s (full jitter, so about 7 s on average). A receiver that is down for minutes dead-letters its
+deliveries and needs a replay; only a `Retry-After` header stretches a wait. The docs implied otherwise and now say this.
+Be ready to explain it in interviews, and consider whether the defaults (or a per-subscription `maxAttempts`) should
+change; that is a product decision, not made here.
 
 **Acceptance criteria**
 
 - [x] README shows a working live link (or clearly marked fallback demo video) and real benchmark
       numbers with the hardware they were measured on. (`325b2e1`; the numbers are local, and the README says so.)
-- [ ] Every claim in README and docs is backed by code, a test, or a measurement.
+- [ ] Every claim in README and docs is backed by code, a test, or a measurement. (Task 3 covered the README, the
+      overview, `observability.md` and the delivery semantics; the gap is listed under task 3.)
 - [ ] The user can explain, without notes: the transactional outbox, `FOR UPDATE SKIP LOCKED`,
       idempotency via `ON CONFLICT`, at-least-once delivery and consumer idempotency, lease-based
       crash recovery, retry classification and backoff, DLQ replay, HMAC signing and verification,
