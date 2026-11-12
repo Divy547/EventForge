@@ -6,9 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# A newer push to a pull request cancels the older run. On main nothing is cancelled: a run may be
+# in the middle of deploying (the `deploy` job), and killing that would leave the host half-updated.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality-and-tests:
@@ -202,3 +204,54 @@ jobs:
           labels: ${{ steps.worker-meta.outputs.labels }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,scope=worker,mode=max
+
+  # Deploys the images published above to the production VM over SSH. It only runs when the
+  # DEPLOY_URL repository variable is set (the on/off switch), so forks and fresh clones stay green.
+  # The key is restricted on the VM to run deploy/deploy.sh and nothing else, and the host key is
+  # pinned, so the secrets cannot be used to get a shell or to reach a different machine. See
+  # "Automatic deploys" in docs/deploy-azure-student.md for the one-time setup.
+  deploy:
+    name: Deploy to Production (SSH)
+    needs: publish-images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    # Never two deploys at once; a newer one waits for the running one instead of cancelling it.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # The command is ignored: the key's authorized_keys entry forces deploy/deploy.sh.
+      - name: Run the deploy script on the VM
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 \
+            "$SSH_USER@$SSH_HOST" deploy
+
+      - name: Verify the public endpoint
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          curl --fail --silent --show-error --max-time 20 \
+            --retry 5 --retry-delay 5 --retry-all-errors \
+            "$DEPLOY_URL/v1/ready"
