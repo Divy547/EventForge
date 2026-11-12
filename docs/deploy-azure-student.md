@@ -4,8 +4,8 @@ This guide takes the production Compose stack (`docker-compose.prod.yml`) from a
 deployment at zero out-of-pocket cost. It is the runbook for the instance at `https://40-81-24-8.sslip.io`; replace
 that hostname and IP with your own.
 
-> **Status:** written before the first deploy and verified step by step during Phase 3, task 5. If a command here
-> turns out to be wrong, fix the guide in the same commit as the fix.
+> **Status:** followed step by step on a fresh VM for the first deploy (2026-11-12) and corrected where it differed.
+> If a command here turns out to be wrong, fix the guide in the same commit as the fix.
 
 For what each service does and for operations that are not specific to this host (migrations, metrics, DLQ triage),
 see [deployment.md](deployment.md).
@@ -14,13 +14,13 @@ see [deployment.md](deployment.md).
 
 ## 1. What you are building
 
-| Item        | Value                                                                                                                                |
-| :---------- | :----------------------------------------------------------------------------------------------------------------------------------- |
-| VM          | `eventforge-vm`, Ubuntu 24.04 LTS, x64, **Standard_B2ats_v2** (2 vCPU burstable, **1 GiB RAM**), East Asia                           |
-| Network     | Standard SKU static public IP; network security group (NSG) allows inbound TCP 22, 80 and 443 only                                   |
-| Hostname    | `<ip-with-dashes>.sslip.io`, which resolves to the IP with no DNS setup; Caddy gets a Let's Encrypt certificate for it               |
-| Images      | Pulled from GHCR (`ghcr.io/divy547/eventforge-api` and `-worker`), built by CI. **Never build on the VM**: 1 GiB is too small        |
-| Memory plan | Per-container limits add up to ~670 MiB (api 224, worker 192, postgres 160, redis 48, caddy 48); the rest is the OS, Docker and swap |
+| Item        | Value                                                                                                                                                                                      |
+| :---------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VM          | `eventforge-vm`, Ubuntu 24.04 LTS, x64, **Standard_B2ats_v2** (2 vCPU burstable, **1 GiB RAM**, of which `free` shows only **~836 MiB** usable), East Asia                                 |
+| Network     | Standard SKU static public IP; network security group (NSG) allows inbound TCP 22, 80 and 443 only                                                                                         |
+| Hostname    | `<ip-with-dashes>.sslip.io`, which resolves to the IP with no DNS setup; Caddy gets a Let's Encrypt certificate for it                                                                     |
+| Images      | Pulled from GHCR (`ghcr.io/divy547/eventforge-api` and `-worker`), built by CI. **Never build on the VM**: 1 GiB is too small                                                              |
+| Memory plan | Per-container limits add up to ~670 MiB (api 224, worker 192, postgres 160, redis 48, caddy 48) against ~836 MiB usable; measured steady state is ~215 MiB (section 7). Swap covers bursts |
 
 The VM, static IP and NSG rules are created in the Azure portal by the account owner. Recap of what must exist:
 
@@ -40,6 +40,17 @@ SSH in (adjust user and key path to what you chose at creation):
 ```bash
 ssh -i ~/.ssh/<your-key> azureuser@40.81.24.8
 ```
+
+**Working from WSL with a key downloaded on Windows?** SSH refuses keys under `/mnt/c` because they look
+world-readable, and spaces in the Windows path break later commands. Copy the key into WSL once and lock it down:
+
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+cp "/mnt/c/Users/<you>/Downloads/<your-key>.pem" ~/.ssh/<your-key>.pem
+chmod 600 ~/.ssh/<your-key>.pem
+```
+
+The rest of this guide uses `~/.ssh/<your-key>.pem`; `ssh ... 'echo connected'` is a quick check that it works.
 
 ### 2.1 Add 2 GB of swap
 
@@ -74,9 +85,7 @@ sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
@@ -141,9 +150,20 @@ chmod 600 .env.production
 # Generate secrets in place (hex avoids URL-escaping problems in the database connection string)
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env.production
 sed -i "s|^METRICS_TOKEN=.*|METRICS_TOKEN=$(openssl rand -hex 24)|" .env.production
+
+# This deployment's values (use your own hostname)
+sed -i "s|^SITE_ADDRESS=.*|SITE_ADDRESS=40-81-24-8.sslip.io|" .env.production
+sed -i "s|^SANDBOX_ENABLED=.*|SANDBOX_ENABLED=true|" .env.production
 ```
 
-Then edit the remaining values with `nano .env.production`:
+Check the result without printing the secrets (each secret should be 48 characters):
+
+```bash
+grep -E '^(SITE_ADDRESS|SANDBOX_ENABLED|SANDBOX_RECEIVER_URL|TRUST_PROXY_HOPS)=' .env.production
+awk -F= '/^(POSTGRES_PASSWORD|METRICS_TOKEN)=/ {print $1, length($2)}' .env.production
+```
+
+What the values mean (edit others with `nano .env.production`):
 
 | Variable               | Value for this deployment                                                                                            |
 | :--------------------- | :------------------------------------------------------------------------------------------------------------------- |
@@ -169,8 +189,12 @@ alias dc='docker compose --env-file .env.production -f docker-compose.prod.yml'
 
 dc pull
 dc up -d --no-build
-dc ps
+dc ps -a
 ```
+
+The `dc` alias lasts for the current SSH session only; define it again after reconnecting. Expect all of
+`postgres`, `redis`, `api` and `worker` to be `Up (healthy)`, `caddy` to be `Up` (it has no healthcheck), and
+`migrate` to show `Exited (0)`, which is correct for a one-off job.
 
 Start-up order is enforced by Compose: Postgres and Redis become healthy, the one-off `migrate` job applies the schema
 and exits, then the API and worker start, then Caddy once the API is healthy. The first start also requests the
@@ -182,7 +206,8 @@ Follow the logs while it settles:
 dc logs -f caddy api      # Ctrl-C to stop following
 ```
 
-Look for Caddy logging `certificate obtained successfully`. Then from your own machine:
+Look for Caddy logging `certificate obtained successfully` (it took about 11 seconds on the first deploy; the
+"creating new account ... no such file" lines before it are normal on a first start). Then from your own machine:
 
 ```bash
 curl -i https://40-81-24-8.sslip.io/v1/health          # 200, valid certificate
@@ -223,14 +248,38 @@ The raw key is printed **once**; store it in a password manager. Revoke or rotat
 
 ### 6.3 Verify the whole stack
 
-Run the smoke test from a checkout on your own machine against the public URL (needs a key from 6.2):
+Run the smoke test from a checkout of the repository on your own machine, against the public URL. The script mints a
+throwaway key through the admin CLI, so point `ADMIN_CMD` at the VM over SSH, and read `METRICS_TOKEN` from the VM into
+a shell variable so it is never printed:
 
 ```bash
-API_URL=https://40-81-24-8.sslip.io SMOKE_API_KEY=<key> METRICS_TOKEN=<token> pnpm smoke-test:remote
+VM=azureuser@40.81.24.8
+KEY=~/.ssh/<your-key>.pem
+
+export METRICS_TOKEN=$(ssh -i $KEY $VM "grep '^METRICS_TOKEN=' EventForge/.env.production | cut -d= -f2")
+export ADMIN_CMD="ssh -i $KEY $VM 'cd EventForge && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T api node packages/database/dist/scripts/admin.js'"
+echo "token length: ${#METRICS_TOKEN}"     # 48
+
+API_URL=https://40-81-24-8.sslip.io pnpm smoke-test:remote
 ```
 
-Note that `METRICS_TOKEN` is the value from the VM's `.env.production`. The smoke test is HTTP-only: it does not prove
-webhook delivery to an external URL, but the dashboard's sandbox flow does (it delivers to the demo receiver).
+All 28 checks passed on 2026-11-12. The `export` lines must come first because the script reads them. Alternatively
+pass `SMOKE_API_KEY=<key>` with a key from 6.2 and skip `ADMIN_CMD`.
+
+The test leaves a `smoke-test` project in the database (it revokes its key but keeps the project); that is harmless.
+The smoke test is HTTP-only: it does not prove webhook delivery to an external URL, but the dashboard's sandbox flow
+does (it delivers to the demo receiver). On the first deploy the sandbox flow was also checked by hand: sign in, send
+events, see them under Events and reach `DELIVERED` under Deliveries.
+
+Finally, check from your own machine that only the intended ports answer:
+
+```bash
+for p in 22 80 443 3000 3001 5432 6379; do
+  timeout 3 bash -c "echo > /dev/tcp/40.81.24.8/$p" 2>/dev/null && echo "$p open" || echo "$p closed"
+done
+```
+
+Only 22, 80 and 443 should be open.
 
 ---
 
@@ -245,18 +294,36 @@ sudo dmesg -T | grep -i -E 'out of memory|oom|killed process'   # should print n
 dc ps                           # every service Up, none restarting
 ```
 
-Healthy looks like total container memory well under 700 MiB and little or no swap in use. A container that shows
-`(OOMKilled)` in `docker inspect <name> --format '{{.State.OOMKilled}}'` has hit its limit; raise that service's limit
-or resize the VM (section 9).
+Healthy looks like total container memory well under 700 MiB and little or no swap in use. A container that has hit
+its limit shows `OOMKilled=true`:
+
+```bash
+for c in api worker postgres redis caddy; do
+  echo -n "$c: "; docker inspect eventforge-prod-$c --format 'OOMKilled={{.State.OOMKilled}} Restarts={{.RestartCount}}'
+done
+```
+
+If one has, raise that service's limit or resize the VM (section 9).
+
+**Measured on 2026-11-12** after the smoke test and a sandbox session: api 75 MiB, worker 68, postgres 24, redis 4,
+caddy 41 (about 213 MiB in total), 443 MiB of RAM still available, no OOM events in `dmesg`, every container
+`OOMKilled=false Restarts=0`. About 190 MiB of swap was in use, left over from the image pulls, and did not grow.
+**Caddy sits at about 85% of its 48 MiB limit**, the closest of any service. If it is ever OOM-killed Docker restarts
+it within seconds and the certificate survives in its volume; raise `CADDY_MEM_LIMIT` to 64m if that happens.
 
 Reboot test (the stack must come back on its own, with data and certificate intact):
 
 ```bash
 sudo reboot
 # wait a minute, reconnect
-dc ps
+dc ps -a
+free -h | grep Swap            # 2.0Gi: the /etc/fstab entry worked
 curl -i https://40-81-24-8.sslip.io/v1/ready
 ```
+
+Passed on 2026-11-12: all five services came back `Up (healthy)` by themselves and the certificate was reused.
+`migrate` does **not** run again after a reboot, because Docker only restarts containers that have a restart policy
+and `migrate` has `restart: 'no'`; migrations run on `dc up`, not on boot.
 
 ---
 
@@ -325,9 +392,27 @@ _Burn rate and expected end date: to be recorded here from Cost Management after
 
 ### Check the remaining credit
 
-Azure portal: **Cost Management + Billing**, then your Azure for Students subscription, where the remaining credit and
-its expiry are shown. Open **Cost analysis** to see the daily burn by resource. Check it when you deploy and then about
-once a month. Set a budget alert (Cost Management, Budgets) at roughly 50% and 80% of the credit; alerts are free.
+Azure portal: **Cost Management + Billing**, then your Azure for Students subscription. Open **Cost analysis** to see
+the daily burn by resource. Cost data arrives 8 to 24 hours late, so a brand-new VM shows "No cost reported" at first.
+Make sure the scope is the **subscription**, not the billing account (the billing-account scope listed no costs).
+Amounts are shown in the billing currency (rupees for this account), not dollars. Check it when you deploy and then
+about once a month.
+
+### Budget alert
+
+Create the budget on the **subscription** (Subscriptions, your subscription, Cost Management, Budgets, Add), not on the
+billing account. Settings used here:
+
+| Field        | Value                                                                                       |
+| :----------- | :------------------------------------------------------------------------------------------ |
+| Name         | `eventforge-credit`                                                                         |
+| Reset period | **Annually**, so one budget tracks cumulative spend over the whole credit period            |
+| Amount       | **8,500 INR**, about the $100 credit. The budget uses the billing currency, so enter rupees |
+| Alerts       | Actual cost at 50% (₹4,250) and 80% (₹6,800), emailed to the account owner                  |
+
+Do not use a **Monthly** reset: monthly spend is only about $10 to $12, so it would never trigger as the credit runs
+down. The amount is in rupees by default and the form does not warn you, so a "100" means ₹100 (about $1.20) and the
+alerts would fire at once. A budget only sends email; it does not stop spending. Deallocating the VM does.
 
 ### Stop paying for compute when the demo is not needed
 
