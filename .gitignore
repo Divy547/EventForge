@@ -10,12 +10,23 @@ build/
 # Turborepo
 .turbo/
 
-# Environment variables
+# Environment variables (templates stay tracked)
 .env
-.env.local
-.env.production
-.env.*.local
+.env.*
 !.env.example
+!.env.production.example
+
+# Keys and infrastructure state
+*.pem
+*.key
+id_rsa*
+*.tfstate
+*.tfstate.*
+
+# Private working files (planning notes, interview prep, resume drafts) and local tool state
+private/
+.claude/
+.eslintcache
 
 # Logs
 npm-debug.log*

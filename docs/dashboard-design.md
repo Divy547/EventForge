@@ -1,7 +1,6 @@
 # EventForge — Dashboard Design
 
-> Moved out of `PLAN.md` on 2026-11-12. Read only for Phase 2 tasks 3 (landing page) and 11
-> (responsive and theming pass).
+> Design notes for the dashboard's landing page and its responsive and theming pass (decided 2026-11-12).
 
 ## Design (decided 2026-11-12)
 

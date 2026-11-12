@@ -467,7 +467,7 @@ _Burn rate and expected end date: to be recorded here from Cost Management after
 Azure portal: **Cost Management + Billing**, then your Azure for Students subscription. Open **Cost analysis** to see
 the daily burn by resource. Cost data arrives 8 to 24 hours late, so a brand-new VM shows "No cost reported" at first.
 Make sure the scope is the **subscription**, not the billing account (the billing-account scope listed no costs).
-Amounts are shown in the billing currency (rupees for this account), not dollars. Check it when you deploy and then
+Amounts are shown in the billing currency, which may not be dollars. Check it when you deploy and then
 about once a month.
 
 ### Budget alert
@@ -475,16 +475,16 @@ about once a month.
 Create the budget on the **subscription** (Subscriptions, your subscription, Cost Management, Budgets, Add), not on the
 billing account. Settings used here:
 
-| Field        | Value                                                                                       |
-| :----------- | :------------------------------------------------------------------------------------------ |
-| Name         | `eventforge-credit`                                                                         |
-| Reset period | **Annually**, so one budget tracks cumulative spend over the whole credit period            |
-| Amount       | **8,500 INR**, about the $100 credit. The budget uses the billing currency, so enter rupees |
-| Alerts       | Actual cost at 50% (₹4,250) and 80% (₹6,800), emailed to the account owner                  |
+| Field        | Value                                                                            |
+| :----------- | :------------------------------------------------------------------------------- |
+| Name         | `eventforge-credit`                                                              |
+| Reset period | **Annually**, so one budget tracks cumulative spend over the whole credit period |
+| Amount       | About the $100 credit, entered in the billing currency (convert it first)        |
+| Alerts       | Actual cost at 50% and 80% of the amount, emailed to the account owner           |
 
 Do not use a **Monthly** reset: monthly spend is only about $10 to $12, so it would never trigger as the credit runs
-down. The amount is in rupees by default and the form does not warn you, so a "100" means ₹100 (about $1.20) and the
-alerts would fire at once. A budget only sends email; it does not stop spending. Deallocating the VM does.
+down. The form does not warn you about the currency, so entering the dollar figure in a non-dollar account sets the wrong
+budget and the alerts would fire at once or never. A budget only sends email; it does not stop spending. Deallocating the VM does.
 
 ### Stop paying for compute when the demo is not needed
 
