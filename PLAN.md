@@ -238,6 +238,18 @@ change; that is a product decision, not made here.
       and SSRF protection.
 - [ ] 2–3 resume bullets are written, each tied to a verifiable feature or number.
 
+### Backlog (not scheduled; do only after the user approves)
+
+- [ ] **Make the dashboard responsive** (raised 2026-11-12: "the site is not responsive"). Check every page at
+      phone and tablet widths, light and dark, and fix what breaks. Known so far: the landing diagram keeps a
+      640 px minimum width and scrolls sideways, and the Endpoint C caption in it is clipped at the bottom of
+      the SVG. Tables, the filter forms and the header nav have not been re-checked since the black-and-white
+      re-theme. Verify with headless-browser screenshots, not only the unit tests.
+- [ ] **Make the landing page look professional and modern** (raised 2026-11-12). A visual redesign of
+      `Landing.tsx` and its components (hero, sign-in card, "How an event travels" diagram, "What you get"
+      cards): stronger hierarchy and spacing, a more polished hero, consistent with the black-and-white theme
+      and the Fraunces headings. Propose a design first and wait for approval, as for any frontend change.
+
 ---
 
 ## 5. Working Agreement
