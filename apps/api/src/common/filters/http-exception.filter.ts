@@ -96,6 +96,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         return 'Payload Too Large';
       case HttpStatus.UNPROCESSABLE_ENTITY:
         return 'Unprocessable Entity';
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return 'Too Many Requests';
       case HttpStatus.SERVICE_UNAVAILABLE:
         return 'Service Unavailable';
       default:
@@ -117,6 +119,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         return 'CONFLICT';
       case HttpStatus.PAYLOAD_TOO_LARGE:
         return 'PAYLOAD_TOO_LARGE';
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return 'RATE_LIMITED';
       default:
         return 'INTERNAL_SERVER_ERROR';
     }

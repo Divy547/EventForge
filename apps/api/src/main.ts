@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'node:path';
 import { validateEnv } from '@eventforge/config';
 import { StructuredLogger, type LogLevel } from '@eventforge/common';
+import { configureHttpSecurity } from './common/security/http-security.js';
 import { AppModule } from './app.module.js';
 
 // Load environment variables before validation
@@ -29,6 +30,9 @@ async function bootstrap(): Promise<void> {
     logger: structuredLogger,
     bufferLogs: true,
   });
+
+  // 3. HTTP security: trust proxy, helmet, CORS
+  configureHttpSecurity(app, env);
 
   // 3. Graceful shutdown hooks
   app.enableShutdownHooks();

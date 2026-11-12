@@ -29,6 +29,25 @@ export const envSchema = z
     DELIVERY_LEASE_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
     STALE_RECOVERY_INTERVAL_MS: z.coerce.number().int().positive().default(30000),
 
+    // API protection
+    RATE_LIMIT_ENABLED: z
+      .union([z.boolean(), z.string()])
+      .optional()
+      .transform((val) => !(val === false || val === 'false' || val === '0')),
+    RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+    RATE_LIMIT_KEY_MAX: z.coerce.number().int().positive().default(1200),
+    RATE_LIMIT_IP_MAX: z.coerce.number().int().positive().default(2400),
+    CORS_ALLOWED_ORIGINS: z
+      .string()
+      .default('')
+      .transform((val) =>
+        val
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      ),
+    TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
+
     ALLOW_LOCAL_WEBHOOKS: z
       .union([z.boolean(), z.string()])
       .optional()
