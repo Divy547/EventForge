@@ -39,11 +39,13 @@ A standalone production configuration is provided in `docker-compose.prod.yml`.
 | `postgres` | `postgres:16-alpine`       | `5432`        | _(None - Private)_ | Transactional event storage & outbox       |
 | `redis`    | `redis:7-alpine`           | `6379`        | _(None - Private)_ | BullMQ delivery queue & retries            |
 | `migrate`  | `eventforge-api:latest`    | _(none)_      | _(None - Private)_ | One-off job: applies DB migrations, exits  |
-| `api`      | `eventforge-api:latest`    | `3000`        | `3000`             | Public REST API & Webhook ingestion        |
+| `caddy`    | `caddy:2-alpine`           | `80`, `443`   | `80`, `443`        | Only public entry point; HTTPS + proxy     |
+| `api`      | `eventforge-api:latest`    | `3000`        | `127.0.0.1:3000`   | REST API, dashboard & webhook ingestion    |
 | `worker`   | `eventforge-worker:latest` | `3001`        | _(None - Private)_ | Background outbox poller & HTTP dispatcher |
 
 ### Security Boundaries
 
+- **Caddy is the only service reachable from the network.** It terminates HTTPS (a Let's Encrypt certificate for `SITE_ADDRESS` is issued and renewed automatically, so ports 80 and 443 must be open) and proxies everything to the API. The API's own port is bound to `127.0.0.1`, so it is reachable from the host (admin CLI, smoke test) but not from outside. Caddy overwrites any client-supplied `X-Forwarded-For`, and `TRUST_PROXY_HOPS` defaults to `1` in this file so rate limiting sees real client IPs. Certificates live in the `eventforge_prod_caddy_data` volume.
 - PostgreSQL and Redis ports are kept internal to the isolated Docker network `eventforge_prod_net`.
 - The worker's health/metrics server (`:3001`) is **not published** to the host. `WORKER_HOST=0.0.0.0` only makes it reachable from other containers on the internal network (it is used by the container's own healthcheck).
 - The API's `/metrics` requires `Authorization: Bearer $METRICS_TOKEN`; if `METRICS_TOKEN` is unset in production the endpoint returns `404`.
@@ -56,7 +58,8 @@ A standalone production configuration is provided in `docker-compose.prod.yml`.
 ```bash
 # 1. Create production environment file from template
 cp .env.production.example .env.production
-# Edit .env.production with your secure credentials
+# Edit .env.production: set POSTGRES_PASSWORD and SITE_ADDRESS (your public hostname, or :80 for
+# plain HTTP when testing on your own machine)
 
 # 2. Build and launch services in detached mode
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build

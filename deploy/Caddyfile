@@ -1,0 +1,18 @@
+# Caddy is the only public entry point of the production stack (see docker-compose.prod.yml).
+# SITE_ADDRESS is the public hostname, e.g. 40-81-24-8.sslip.io. For a hostname Caddy obtains and
+# renews a Let's Encrypt certificate automatically (ports 80 and 443 must be reachable).
+# Use ":80" to serve plain HTTP only, e.g. when testing the stack on your own machine.
+{
+	# Only HTTP/1.1 and HTTP/2: HTTP/3 needs UDP 443, which the cloud firewall does not open.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	# Everything (API, /dashboard, /docs, sandbox receiver) is served by the api container.
+	# Caddy sets X-Forwarded-For to the real client address, which the API reads because
+	# TRUST_PROXY_HOPS=1.
+	reverse_proxy api:3000
+}

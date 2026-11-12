@@ -66,8 +66,9 @@ services:
     image: eventforge-api:latest
     container_name: eventforge-prod-api
     restart: unless-stopped
+    # Reachable from the host itself only (admin CLI, smoke test); the public entry point is caddy.
     ports:
-      - '${PORT:-3000}:3000'
+      - '127.0.0.1:${PORT:-3000}:3000'
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -81,7 +82,8 @@ services:
       RATE_LIMIT_KEY_MAX: ${RATE_LIMIT_KEY_MAX:-1200}
       RATE_LIMIT_IP_MAX: ${RATE_LIMIT_IP_MAX:-2400}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      # Caddy is always in front, so read the client address from its X-Forwarded-For header.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       ALLOW_LOCAL_WEBHOOKS: 'false'
       SANDBOX_ENABLED: ${SANDBOX_ENABLED:-false}
       SANDBOX_RECEIVER_URL: ${SANDBOX_RECEIVER_URL:-http://api:3000/sandbox/receiver}
@@ -137,11 +139,37 @@ services:
     networks:
       - eventforge-net
 
+  # The only service published to the network: terminates HTTPS (automatic Let's Encrypt
+  # certificate for SITE_ADDRESS) and proxies everything to the api container.
+  caddy:
+    image: caddy:2-alpine
+    container_name: eventforge-prod-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS must be set (see .env.production.example)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_prod_data:/data
+      - caddy_prod_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - eventforge-net
+
 volumes:
   postgres_prod_data:
     name: eventforge_prod_postgres_data
   redis_prod_data:
     name: eventforge_prod_redis_data
+  # Holds the issued certificates; losing it means re-requesting them (rate-limited by the CA).
+  caddy_prod_data:
+    name: eventforge_prod_caddy_data
+  caddy_prod_config:
+    name: eventforge_prod_caddy_config
 
 networks:
   eventforge-net:
