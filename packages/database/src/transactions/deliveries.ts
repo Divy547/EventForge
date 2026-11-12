@@ -294,8 +294,29 @@ export async function recoverAbandonedInFlightDeliveries(
 
   const recovered: DeliveryRecord[] = [];
 
-  for (const delivery of abandoned) {
+  for (const candidate of abandoned) {
     await db.transaction(async (tx) => {
+      // The select above is not locked, so by now another recovery pass may have handled this
+      // delivery, or it may have moved on (retried and completed). Take the row lock and check
+      // again that it is still abandoned. SKIP LOCKED leaves a row that another transaction is
+      // working on to that transaction; if it is still abandoned the next pass picks it up.
+      const [delivery] = await tx
+        .select()
+        .from(deliveries)
+        .where(
+          and(
+            eq(deliveries.id, candidate.id),
+            eq(deliveries.status, 'IN_FLIGHT'),
+            sql`${deliveries.updatedAt} < NOW() - (${leaseTimeoutSeconds} * INTERVAL '1 second')`,
+          ),
+        )
+        .for('update', { skipLocked: true })
+        .limit(1);
+
+      if (!delivery) {
+        return;
+      }
+
       const nextAttemptNumber = delivery.attemptsCount + 1;
       const isExhausted = nextAttemptNumber >= delivery.maxAttempts;
       const nextStatus = isExhausted ? 'DEAD_LETTER' : 'FAILED';

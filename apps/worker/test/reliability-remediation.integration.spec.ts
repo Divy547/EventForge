@@ -412,6 +412,148 @@ describe('Milestone 4 Reliability Remediation Integration Tests', () => {
     expect(crashAttempts[0]!.statusCode).toBeNull();
   });
 
+  it('recovers each abandoned delivery exactly once when two recovery passes run at the same time', async () => {
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({
+        projectId: testProjectId,
+        name: 'Concurrent Recovery Sub',
+        targetUrl: `${mockServerUrl}/webhook`,
+        signingSecret: 'whsec_test',
+        eventTypes: ['crash.concurrent'],
+        isActive: true,
+      })
+      .returning();
+
+    const deliveryIds: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const { event } = await insertEventWithOutbox(db, {
+        projectId: testProjectId,
+        eventType: 'crash.concurrent',
+        source: 'test-src',
+        payload: { i },
+      });
+      const [del] = await db
+        .insert(deliveries)
+        .values({
+          projectId: testProjectId,
+          eventId: event.id,
+          subscriptionId: sub!.id,
+          status: 'IN_FLIGHT',
+          attemptsCount: 0,
+          maxAttempts: 5,
+          updatedAt: new Date(Date.now() - 75 * 1000),
+        })
+        .returning();
+      deliveryIds.push(del!.id);
+    }
+
+    // Two workers run their recovery pass at the same moment.
+    const [first, second] = await Promise.all([
+      recoverAbandonedInFlightDeliveries(db, 60),
+      recoverAbandonedInFlightDeliveries(db, 60),
+    ]);
+
+    // Each delivery is reported recovered by exactly one of the two passes.
+    for (const id of deliveryIds) {
+      const reportedBy = [first, second].filter((pass) => pass.some((d) => d.id === id)).length;
+      expect(reportedBy).toBe(1);
+    }
+
+    // And each one has a single WORKER_CRASHED attempt and a single counted attempt.
+    for (const id of deliveryIds) {
+      const attempts = await db
+        .select()
+        .from(deliveryAttempts)
+        .where(eq(deliveryAttempts.deliveryId, id));
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]!.errorCode).toBe('WORKER_CRASHED');
+
+      const [after] = await db.select().from(deliveries).where(eq(deliveries.id, id));
+      expect(after!.status).toBe('FAILED');
+      expect(after!.attemptsCount).toBe(1);
+    }
+  });
+
+  it('does not touch a delivery that finished between being selected as abandoned and being recovered', async () => {
+    // A recovery pass selects abandoned rows first and updates them afterwards. If the delivery
+    // moves on in between (here: completes), recovery must leave it alone instead of turning
+    // it back into FAILED. The pass is run through a database whose first select is held open
+    // until the delivery has been completed.
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({
+        projectId: testProjectId,
+        name: 'Stale Selection Sub',
+        targetUrl: `${mockServerUrl}/webhook`,
+        signingSecret: 'whsec_test',
+        eventTypes: ['crash.stale'],
+        isActive: true,
+      })
+      .returning();
+    const { event } = await insertEventWithOutbox(db, {
+      projectId: testProjectId,
+      eventType: 'crash.stale',
+      source: 'test-src',
+      payload: {},
+    });
+    const [del] = await db
+      .insert(deliveries)
+      .values({
+        projectId: testProjectId,
+        eventId: event.id,
+        subscriptionId: sub!.id,
+        status: 'IN_FLIGHT',
+        attemptsCount: 0,
+        maxAttempts: 5,
+        updatedAt: new Date(Date.now() - 75 * 1000),
+      })
+      .returning();
+
+    // Hold a row lock so the recovery transaction has to wait, complete the delivery under
+    // that lock, then release it. Recovery's own select already happened by then.
+    let releaseLock!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockAcquired!: () => void;
+    const lockReady = new Promise<void>((resolve) => {
+      lockAcquired = resolve;
+    });
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(deliveries).where(eq(deliveries.id, del!.id)).for('update');
+      lockAcquired();
+      await lockHeld;
+      await tx
+        .update(deliveries)
+        .set({
+          status: 'COMPLETED',
+          attemptsCount: 1,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(deliveries.id, del!.id));
+    });
+    await lockReady;
+
+    const recovery = recoverAbandonedInFlightDeliveries(db, 60);
+    // Give the recovery pass time to run its select and reach the locked row.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    releaseLock();
+    await holder;
+    const recovered = await recovery;
+
+    expect(recovered.find((d) => d.id === del!.id)).toBeUndefined();
+    const [after] = await db.select().from(deliveries).where(eq(deliveries.id, del!.id));
+    expect(after!.status).toBe('COMPLETED');
+    expect(after!.attemptsCount).toBe(1);
+    const attempts = await db
+      .select()
+      .from(deliveryAttempts)
+      .where(eq(deliveryAttempts.deliveryId, del!.id));
+    expect(attempts).toHaveLength(0);
+  });
+
   it('preserves accurate attempt semantics: inactive subscriptions do not count as HTTP attempts', async () => {
     // Disabled subscription
     const [sub] = await db

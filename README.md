@@ -103,7 +103,7 @@ runs. **These are local numbers, not numbers for the live demo VM**, which is fa
 | Endpoint fails once, then recovers                                  | delivered on the second attempt in 1.0-1.8 s  |
 
 The 200-request run lasts under half a second, so its tail percentiles come from a small sample. Delivery latency here is
-mostly the wait for the next poll tick, not webhook throughput. The test suite has 208 unit and 91 integration tests
+mostly the wait for the next poll tick, not webhook throughput. The test suite has 208 unit and 93 integration tests
 (real PostgreSQL and Redis), run in CI.
 
 ## Run it locally
