@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 4: tasks 1-4 done, the load test, the README rewrite, the claims pass and the interview guide; Phase 3 only lacks the credit burn rate)_
+_Last updated: 2026-11-12 (Phase 4: tasks 1-5 done, the load test, the README rewrite, the claims pass, the interview guide and the resume bullets; Phase 3 only lacks the credit burn rate)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -15,7 +15,7 @@ the credit burn rate (waits on Azure Cost Management data).
 
 Phase 4 (portfolio polish) is **in progress**: task 1 (load test, run locally) is done and led to a worker fix
 (`e0f9600`); task 2 (README rewrite, `325b2e1`) is done; task 3 (claims pass, `8aac462`, `ead7b54`) is done in part
-(see its note); task 4 (interview guide, `146233b`) is done; task 5 is not started.
+(see its note); task 4 (interview guide, `146233b`) and task 5 (resume bullets, `f86f6ba`) are done.
 
 ---
 
@@ -160,8 +160,8 @@ stops newer pushes from cancelling runs on `main`.
 
 ### Phase 4 — Portfolio Polish & Interview Readiness
 
-**Status: 🔄 In progress (started 2026-11-12).** Tasks 1-4 are done (task 3 with a gap, see its note); task 5 is not
-started and needs "start with task 5".
+**Status: 🔄 In progress (started 2026-11-12).** Tasks 1-5 are done (task 3 with a gap, see its note). Open acceptance
+criteria: every claim backed (the task 3 gap) and the user explaining the design without notes.
 
 **Tasks**
 
@@ -191,7 +191,10 @@ started and needs "start with task 5".
    also has a self-test checklist, eleven limits to own, and the numbers that may and may not be quoted. Written from the
    code, not from the docs. **Not done:** the user has not yet practised from it, so the "can explain without notes"
    criterion stays open. Findings it records are under "Task 4 findings".
-5. Draft resume bullet points based on measured results.
+5. ✅ **Resume bullets** (`f86f6ba`, `docs/resume-bullets.md`). Three bullets and a one-line version, each tied to a
+   feature, a measurement or a test count, plus a "do not claim" list (no "scalable", "exactly-once" or "highly
+   available"; no deployed-instance performance figures; no "SSRF-proof"). The benchmark figures are local and the file
+   says so. The file is public once pushed; see "Handling finals for GitHub" in the backlog.
 
 **Why the load test is local only.** `scripts/load-test.ts` writes its project and key straight into Postgres, runs its own
 webhook receiver on `127.0.0.1` and sets `ALLOW_LOCAL_WEBHOOKS`, so it cannot run against the public instance as written.
@@ -259,7 +262,7 @@ or hardening decisions, so each needs approval before any change.
       idempotency via `ON CONFLICT`, at-least-once delivery and consumer idempotency, lease-based
       crash recovery, retry classification and backoff, DLQ replay, HMAC signing and verification,
       and SSRF protection.
-- [ ] 2–3 resume bullets are written, each tied to a verifiable feature or number.
+- [x] 2–3 resume bullets are written, each tied to a verifiable feature or number. (`f86f6ba`)
 
 ### Backlog (not scheduled; do only after the user approves)
 
@@ -272,6 +275,13 @@ or hardening decisions, so each needs approval before any change.
       `Landing.tsx` and its components (hero, sign-in card, "How an event travels" diagram, "What you get"
       cards): stronger hierarchy and spacing, a more polished hero, consistent with the black-and-white theme
       and the Fraunces headings. Propose a design first and wait for approval, as for any frontend change.
+- [ ] **Handling finals for GitHub** (raised 2026-11-12). Decide what belongs in the public repository before it is
+      pushed or shared, and move the rest out with `.gitignore`. The user has further files to add to `.gitignore`
+      and will supply the list. Already known to be personal or interview-only: `docs/resume-bullets.md` (committed in
+      `f86f6ba`, so ignoring it later also needs `git rm --cached` and, if the repo was already pushed, a history
+      decision) and possibly `docs/interview-guide.md`, which lists the project's own weaknesses. Check at the same
+      time that no secrets, `.env` files, local dev data or throwaway notes are tracked. Propose the file list first and
+      wait for approval.
 
 ---
 
