@@ -29,8 +29,10 @@ COPY apps/api/ ./apps/api/
 COPY apps/worker/ ./apps/worker/
 COPY turbo.json tsconfig*.json ./
 RUN pnpm build
-# Prune devDependencies across the monorepo
-RUN pnpm prune --prod --config.confirmModulesPurge=false
+# Keep only production dependencies. (`pnpm prune --prod` empties node_modules entirely in this
+# workspace, so reinstall with --prod instead; the layout stays identical.)
+RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules \
+    && pnpm install --frozen-lockfile --prod
 
 # Stage 4: Minimal production runtime
 FROM node:24-alpine AS runner
@@ -44,13 +46,17 @@ COPY --from=builder --chown=node:node /app/package.json ./package.json
 COPY --from=builder --chown=node:node /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 
-# Copy built workspace packages
+# Copy built workspace packages. pnpm keeps each package's dependencies as symlinks in its own
+# node_modules (pointing into the root .pnpm store), so those directories must be copied too.
 COPY --from=builder --chown=node:node /app/packages/common/package.json ./packages/common/package.json
 COPY --from=builder --chown=node:node /app/packages/common/dist ./packages/common/dist
+COPY --from=builder --chown=node:node /app/packages/common/node_modules ./packages/common/node_modules
 COPY --from=builder --chown=node:node /app/packages/config/package.json ./packages/config/package.json
 COPY --from=builder --chown=node:node /app/packages/config/dist ./packages/config/dist
+COPY --from=builder --chown=node:node /app/packages/config/node_modules ./packages/config/node_modules
 COPY --from=builder --chown=node:node /app/packages/database/package.json ./packages/database/package.json
 COPY --from=builder --chown=node:node /app/packages/database/dist ./packages/database/dist
+COPY --from=builder --chown=node:node /app/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder --chown=node:node /app/packages/database/migrations ./packages/database/migrations
 COPY --from=builder --chown=node:node /app/packages/sdk/package.json ./packages/sdk/package.json
 COPY --from=builder --chown=node:node /app/packages/sdk/dist ./packages/sdk/dist
@@ -58,6 +64,7 @@ COPY --from=builder --chown=node:node /app/packages/sdk/dist ./packages/sdk/dist
 # Copy API app
 COPY --from=builder --chown=node:node /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder --chown=node:node /app/apps/api/dist ./apps/api/dist
+COPY --from=builder --chown=node:node /app/apps/api/node_modules ./apps/api/node_modules
 
 USER node
 

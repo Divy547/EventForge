@@ -1,3 +1,12 @@
+# Distinct project name so `docker compose -f docker-compose.prod.yml down` can never match the
+# development stack's containers (both files otherwise default to project "eventforge" and share
+# service names).
+name: eventforge-prod
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -34,10 +43,26 @@ services:
     networks:
       - eventforge-net
 
+  # One-off job: applies pending database migrations, then exits. api and worker only start
+  # after it completes successfully, so a failed migration stops the deploy instead of
+  # starting new code against an old schema.
+  migrate:
+    build: *api-build
+    image: eventforge-api:latest
+    container_name: eventforge-prod-migrate
+    restart: 'no'
+    command: ['node', 'packages/database/dist/scripts/migrate.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set (see .env.production.example)}@postgres:5432/${POSTGRES_DB:-eventforge}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - eventforge-net
+
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    build: *api-build
     image: eventforge-api:latest
     container_name: eventforge-prod-api
     restart: unless-stopped
@@ -63,6 +88,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - eventforge-net
 
@@ -99,6 +126,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - eventforge-net
 
