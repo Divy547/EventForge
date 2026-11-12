@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { RecentFailure } from '@/lib/api';
 import { formatAgo } from '@/lib/format';
@@ -27,7 +28,12 @@ export function RecentFailures({ failures }: RecentFailuresProps) {
             {failures.map((f) => (
               <li key={f.deliveryId} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="font-mono text-sm font-medium">{f.eventType}</span>
+                  <Link
+                    to={`/deliveries/${f.deliveryId}`}
+                    className="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    {f.eventType}
+                  </Link>
                   <span className="text-sm text-muted-foreground">→ {f.subscriptionName}</span>
                   <span
                     className={

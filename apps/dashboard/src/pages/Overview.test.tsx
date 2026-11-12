@@ -31,7 +31,10 @@ describe('Overview', () => {
     expect(within(breakdown).getByText('Completed').parentElement).toHaveTextContent('2,400');
     expect(within(breakdown).getByText('Dead letter').parentElement).toHaveTextContent('150');
 
-    expect(screen.getByText('order.created')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'order.created' })).toHaveAttribute(
+      'href',
+      '/deliveries/d1',
+    );
     expect(screen.getByText(/Endpoint answered HTTP 500 · 6 attempts/)).toBeInTheDocument();
     expect(screen.getByText(/connect ECONNREFUSED · 1 attempt$/)).toBeInTheDocument();
   });

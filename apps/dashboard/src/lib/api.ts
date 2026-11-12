@@ -152,6 +152,80 @@ export function fetchEvent(
   return getJson<EventWithDeliveries>(`/v1/events/${encodeURIComponent(id)}`, key, signal);
 }
 
+/** Mirrors `DeliverySummaryResponseDto`. The list carries IDs only; names are on the detail. */
+export interface DeliverySummary {
+  id: string;
+  projectId: string;
+  eventId: string;
+  subscriptionId: string;
+  status: DeliveryStatus;
+  attemptsCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Mirrors `PaginatedDeliveriesResponseDto`. */
+export interface DeliveryPage {
+  data: DeliverySummary[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+/** Mirrors `DeliveryAttemptResponseDto`. */
+export interface DeliveryAttempt {
+  id: string;
+  attemptNumber: number;
+  statusCode: number | null;
+  responseBodySnippet: string | null;
+  executionDurationMs: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+/** Mirrors `DeliveryDetailResponseDto`. `event` and `subscription` are absent if since deleted. */
+export interface DeliveryDetail extends DeliverySummary {
+  event?: { id: string; eventType: string; source: string; createdAt: string } | undefined;
+  subscription?: { id: string; name: string; targetUrl: string; isActive: boolean } | undefined;
+  attempts: DeliveryAttempt[];
+}
+
+export const DELIVERY_STATUSES: DeliveryStatus[] = [
+  'DEAD_LETTER',
+  'FAILED',
+  'PENDING',
+  'IN_FLIGHT',
+  'COMPLETED',
+];
+
+/** The API lists one status at a time and falls back to dead letters when none is sent. */
+export const DEFAULT_DELIVERY_STATUS: DeliveryStatus = 'DEAD_LETTER';
+
+export const DELIVERIES_PAGE_SIZE = 20;
+
+export function fetchDeliveries(
+  key: string,
+  query: { page: number; status: DeliveryStatus },
+  signal?: AbortSignal,
+): Promise<ApiResult<DeliveryPage>> {
+  const params = new URLSearchParams({
+    page: String(query.page),
+    limit: String(DELIVERIES_PAGE_SIZE),
+    status: query.status,
+  });
+  return getJson<DeliveryPage>(`/v1/deliveries?${params.toString()}`, key, signal);
+}
+
+export function fetchDelivery(
+  key: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<DeliveryDetail>> {
+  return getJson<DeliveryDetail>(`/v1/deliveries/${encodeURIComponent(id)}`, key, signal);
+}
+
 /** Visitor-facing wording for every failure a page can hit. */
 export const FAILURE_MESSAGES: Record<ApiFailure, string> = {
   unauthorized: 'Your API key was not accepted. Sign in again.',

@@ -96,3 +96,78 @@ export const eventDetailFixture: EventWithDeliveries = {
 export function eventDetailResponse(): Response {
   return new Response(JSON.stringify(eventDetailFixture), { status: 200 });
 }
+
+import type { DeliveryDetail, DeliveryPage, DeliverySummary } from '@/lib/api';
+
+export const deliverySummaryFixture: DeliverySummary = {
+  id: 'dddddddd-1111-4222-8333-444444444444',
+  projectId: 'p1',
+  eventId: eventFixture.id,
+  subscriptionId: 's1',
+  status: 'DEAD_LETTER',
+  attemptsCount: 6,
+  maxAttempts: 6,
+  nextRetryAt: null,
+  completedAt: null,
+  createdAt: '2026-11-12T11:55:00.000Z',
+  updatedAt: '2026-11-12T11:58:00.000Z',
+};
+
+export function deliveriesPage(
+  data: DeliverySummary[] = [deliverySummaryFixture],
+  meta: Partial<DeliveryPage['meta']> = {},
+): Response {
+  const total = meta.total ?? data.length;
+  return new Response(
+    JSON.stringify({ data, meta: { total, page: 1, limit: 20, totalPages: 1, ...meta } }),
+    { status: 200 },
+  );
+}
+
+export const deliveryDetailFixture: DeliveryDetail = {
+  ...deliverySummaryFixture,
+  event: {
+    id: eventFixture.id,
+    eventType: 'order.created',
+    source: 'billing-service',
+    createdAt: eventFixture.createdAt,
+  },
+  subscription: {
+    id: 's1',
+    name: 'Billing hook',
+    targetUrl: 'https://hooks.example.com/in',
+    isActive: true,
+  },
+  attempts: [
+    {
+      id: 'a1',
+      attemptNumber: 1,
+      statusCode: 503,
+      responseBodySnippet: 'upstream unavailable',
+      executionDurationMs: 120,
+      errorCode: null,
+      errorMessage: null,
+      createdAt: '2026-11-12T11:55:05.000Z',
+    },
+    {
+      id: 'a2',
+      attemptNumber: 2,
+      statusCode: null,
+      responseBodySnippet: null,
+      executionDurationMs: 5000,
+      errorCode: 'ETIMEDOUT',
+      errorMessage: 'request timed out',
+      createdAt: '2026-11-12T11:55:15.000Z',
+    },
+    {
+      id: 'a3',
+      attemptNumber: 3,
+      statusCode: 200,
+      responseBodySnippet: null,
+      executionDurationMs: 80,
+      errorCode: null,
+      errorMessage: null,
+      createdAt: '2026-11-12T11:56:00.000Z',
+    },
+  ],
+};

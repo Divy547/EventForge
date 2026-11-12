@@ -9,6 +9,7 @@ interface AppHeaderProps {
 const NAV = [
   { to: '/', label: 'Overview', end: true },
   { to: '/events', label: 'Events', end: false },
+  { to: '/deliveries', label: 'Deliveries', end: false },
 ];
 
 /** Dark navy chrome shared by every signed-in page. */

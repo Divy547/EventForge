@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { Landing } from '@/pages/Landing';
+import { DeliveryDetail } from '@/pages/DeliveryDetail';
+import { Deliveries } from '@/pages/Deliveries';
 import { EventDetail } from '@/pages/EventDetail';
 import { Events } from '@/pages/Events';
 import { Overview } from '@/pages/Overview';
@@ -33,6 +35,11 @@ export function App() {
       <Route path="/" element={<Overview apiKey={apiKey} onSignOut={signOut} />} />
       <Route path="/events" element={<Events apiKey={apiKey} onSignOut={signOut} />} />
       <Route path="/events/:id" element={<EventDetail apiKey={apiKey} onSignOut={signOut} />} />
+      <Route path="/deliveries" element={<Deliveries apiKey={apiKey} onSignOut={signOut} />} />
+      <Route
+        path="/deliveries/:id"
+        element={<DeliveryDetail apiKey={apiKey} onSignOut={signOut} />}
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

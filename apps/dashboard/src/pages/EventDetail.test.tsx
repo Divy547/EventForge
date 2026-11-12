@@ -41,6 +41,9 @@ describe('Event detail', () => {
     expect(within(rows[0]!).getByText('Completed')).toBeInTheDocument();
     expect(within(rows[0]!).getByText('2 of 6')).toBeInTheDocument();
     expect(within(rows[1]!).getByText('Dead letter')).toBeInTheDocument();
+    expect(
+      within(rows[0]!).getByRole('link', { name: 'View delivery to Billing hook' }),
+    ).toHaveAttribute('href', '/deliveries/d1');
   });
 
   it('explains when no subscription matched', async () => {

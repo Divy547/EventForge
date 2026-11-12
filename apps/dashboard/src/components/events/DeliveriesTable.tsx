@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { StatusBadge } from '@/components/events/StatusBadge';
 import {
   Table,
@@ -32,6 +33,9 @@ export function DeliveriesTable({ deliveries }: { deliveries: EventDelivery[] })
           <TableHead>Next retry</TableHead>
           <TableHead>Completed</TableHead>
           <TableHead>Last update</TableHead>
+          <TableHead>
+            <span className="sr-only">Details</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -47,6 +51,15 @@ export function DeliveriesTable({ deliveries }: { deliveries: EventDelivery[] })
             <TableCell className="whitespace-nowrap">{when(d.nextRetryAt)}</TableCell>
             <TableCell className="whitespace-nowrap">{when(d.completedAt)}</TableCell>
             <TableCell className="whitespace-nowrap">{formatDateTime(d.updatedAt)}</TableCell>
+            <TableCell>
+              <Link
+                to={`/deliveries/${d.id}`}
+                aria-label={`View delivery to ${d.subscriptionName}`}
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                View
+              </Link>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

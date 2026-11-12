@@ -1,7 +1,7 @@
 import type { DeliveryStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-const LABELS: Record<DeliveryStatus, string> = {
+export const STATUS_LABELS: Record<DeliveryStatus, string> = {
   PENDING: 'Pending',
   IN_FLIGHT: 'In flight',
   COMPLETED: 'Completed',
@@ -26,7 +26,7 @@ export function StatusBadge({ status }: { status: DeliveryStatus }) {
         TONES[status],
       )}
     >
-      {LABELS[status]}
+      {STATUS_LABELS[status]}
     </span>
   );
 }
