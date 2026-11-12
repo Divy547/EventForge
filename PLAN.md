@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 in progress; first deploy live and verified, fallback doc done)_
+_Last updated: 2026-11-12 (Phase 3 in progress; deploy, fallback doc and automatic deploys done; wording task and credit burn rate remain)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -9,9 +9,10 @@ This document tracks the work needed to take EventForge from a working codebase 
 deployed, portfolio-ready project. Each phase begins only after explicit approval.
 
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **in progress**:
-the Azure VM exists and accepts SSH; Caddy and the GHCR image pipeline are committed, pushed and CI is green (including
-`publish-images`); memory limits for the 1 GiB VM are committed (`45db147`); the deployment guide is committed (`9dbc416`, corrected in `023edc7`); the **first deploy is live** at
-`https://40-81-24-8.sslip.io` and verified (task 5), apart from recording the credit burn rate; the fallback doc (task 6) is committed (`6965f8e`). Task 7 (optional CD) is done and verified; task 8 (wording) remains.
+the stack is live at `https://40-81-24-8.sslip.io` and verified (task 5), the fallback doc is written (task 6, `6965f8e`)
+and automatic deploys from CI work (task 7, verified in CI run `43280734434`). A flaky API test that could block deploys
+was fixed (`fcbc8df`). **Remaining:** record the credit burn rate (task 5, waits on Azure Cost Management data) and the
+wording and archive pass (task 8).
 
 ---
 
@@ -167,6 +168,15 @@ key lives only in `~/.ssh` and is never committed or shared.
 - [x] (If CD is done) a push to `main` that passes CI redeploys the server without manual steps. Verified in CI run
       `43280734434`.
 
+**Also done during Phase 3**
+
+- **Flaky test fixed (`fcbc8df`).** `turbo run test` ran the API and worker suites in parallel on one shared PostgreSQL;
+  the worker's outbox pollers could claim the row that the API concurrency test had just created, so it saw `PROCESSED`
+  instead of `PENDING` (one CI failure; reproduced locally in 4 of 12 runs). `test` and `test:integration` now run with
+  `--concurrency=1`. Not yet seen green in CI after the change.
+- **CI concurrency changed (`1a74ebf`).** Only pull request runs are cancelled by a newer push; runs on `main` finish, so
+  a deploy is never killed halfway.
+
 **Risks and notes**
 
 - Usable RAM on the VM is about 836 MiB, not 1 GiB. Caddy sits at about 85% of its 48 MiB limit; raise
@@ -179,6 +189,13 @@ key lives only in `~/.ssh` and is never committed or shared.
 - sslip.io is shared, so Let's Encrypt's per-domain certificate limit can be hit by other users. Caddy falls back to
   another CA; if both fail, switch to DuckDNS.
 - The first `docker compose pull` fails if the GHCR packages are still private.
+- Every push to `main` that passes CI now redeploys the server (CD is on while the `DEPLOY_URL` variable exists; delete it
+  to turn CD off). A deploy that does not become healthy fails the job but does not roll itself back; see the guide.
+- Behind a fallback tunnel all visitors share one client IP, so per-IP limits (including the sandbox's 10 sessions per
+  hour) are shared. The guide says to raise the sandbox limits. A proper fix is Caddy `trusted_proxies`, deferred until the
+  fallback is actually used and can be tested.
+- A `DEPLOY_URL` saved with a stray space breaks the post-deploy check (hit once; documented in the guide). Trimming it in
+  the workflow is an optional hardening, not done.
 
 ---
 
