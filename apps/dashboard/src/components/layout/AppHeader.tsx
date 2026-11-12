@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router';
+import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { isSandboxSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -25,7 +26,7 @@ export function AppHeader({ onSignOut }: AppHeaderProps) {
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-6">
           <span className="font-heading text-lg font-semibold">EventForge</span>
-          <nav aria-label="Main" className="flex gap-1">
+          <nav aria-label="Main" className="flex flex-wrap gap-1">
             {nav.map((item) => (
               <NavLink
                 key={item.to}
@@ -43,13 +44,16 @@ export function AppHeader({ onSignOut }: AppHeaderProps) {
             ))}
           </nav>
         </div>
-        <Button
-          variant="outline"
-          onClick={onSignOut}
-          className="border-white/30 bg-transparent text-navy-foreground hover:bg-white/10 hover:text-navy-foreground"
-        >
-          Sign out
-        </Button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Button
+            variant="outline"
+            onClick={onSignOut}
+            className="border-white/30 bg-transparent text-navy-foreground hover:bg-white/10 hover:text-navy-foreground"
+          >
+            Sign out
+          </Button>
+        </div>
       </div>
     </header>
   );

@@ -9,6 +9,7 @@
 /* Tokens follow shadcn's CSS-variable convention. "Pipeline" look: dark navy chrome over a light page,
    orange for primary actions (white on #c2410c keeps 4.5:1 contrast). */
 :root {
+  color-scheme: light;
   --radius: 0.625rem;
   --background: #f8fafc;
   --foreground: #0f172a;
@@ -38,6 +39,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #0b1220;
   --foreground: #e2e8f0;
   --card: #111a2e;
@@ -111,5 +113,19 @@
   h2,
   h3 {
     @apply font-heading;
+  }
+}
+
+/* Safety net for the reduced-motion preference: anything that still animates (spinners, library
+   defaults, CSS transitions) is cut to an instant change. The `motion` animations and the chart
+   are also switched off in code. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

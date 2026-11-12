@@ -35,7 +35,7 @@ export function StatCards({ stats }: StatCardsProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-heading text-3xl font-bold tabular-nums">{item.value}</p>
+            <p className="font-heading text-2xl font-bold tabular-nums sm:text-3xl">{item.value}</p>
             <CardDescription className="mt-1">{item.hint}</CardDescription>
           </CardContent>
         </Card>

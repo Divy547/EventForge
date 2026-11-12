@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phase 1 is **implemented and committed** (2026-11-12). Phase 2 is **approved and in
 progress**: task 1 (backend endpoints) is committed as `fc7dd20`; task 2 (dashboard scaffold) is committed as `43bff6a`;
-task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. Task 10 (Sandbox mode) is implemented and **awaiting review, not committed**. Task 11 is next, awaiting approval.
+task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. Task 10 (Sandbox mode) is committed as `ab92174`. Task 11 (responsive and theming pass) is implemented and **awaiting review, not committed**. Task 12 is next, awaiting approval.
 
 ---
 
@@ -77,7 +77,7 @@ task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) 
 
 ### Phase 2 — Dashboard
 
-**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is committed as `450a0d8`; tasks 10–12 have not been started.
+**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `00b4d3b`; task 9 is committed as `450a0d8`; task 10 is committed as `ab92174`; task 11 is awaiting review; task 12 has not been started.
 
 **Existing API surface** (checked 2026-11-12): events (`POST`, `GET` list with `page`/`limit`, `GET :id`),
 deliveries (`GET` list, `GET :id` which already includes the attempts list, single and batch DLQ replay),
@@ -203,6 +203,26 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
 
 11. **Responsive and theming pass**: phone width, light and dark mode (shadcn CSS variables), and a check of
     every animation against reduced motion. See `docs/dashboard-design.md`.
+    _Done (uncommitted, awaiting review): **Theme**: the dark tokens already existed but nothing switched them; a
+    `ThemeToggle` (System, Light, Dark; one button, on the landing page and the signed-in header) sets the `dark` class
+    on `<html>`, follows the OS while on System (including live changes), and is remembered in `localStorage` (guarded
+    against storage errors; the API key stays in `sessionStorage` only). It is applied in `main.tsx` before the first
+    render, so there is no light flash (an inline script would break the dashboard CSP). `color-scheme` is set so native
+    controls match. **Phone width**: checked with headless Chrome at 375 px and 1100 px, light and dark, on every
+    signed-in page and the landing page, measuring horizontal overflow. Found and fixed one real overflow: on Overview the
+    chart forced the grid column wider than the screen (the status list's counts ran off the card); the grid column is now
+    `minmax(0, 1fr)`. The header nav now wraps; stat numbers are `text-2xl` below `sm`. Tables still scroll sideways inside
+    their box, as designed. **Reduced motion**: the landing explainer was already static under the preference (re-checked in a
+    real browser: no moving dot, no Pause button, no active step); the refresh spinners had `motion-reduce:animate-none`;
+    a global `prefers-reduced-motion` rule in `index.css` now cuts any remaining animation or transition to an instant
+    change; Recharts bar animation is switched off (decorative). **Bundle**: Recharts is lazy-loaded (`StatusBarChart`),
+    which removes the 500 kB chunk warning (main 495 kB, chart 354 kB) and shows the numbers before the bars. Tests: 95
+    dashboard (8 new: theme storage, system detection, toggle cycle).
+    Notes: with bar animation on, the bars stayed empty in headless Chrome once the chart was lazy-loaded; I could not tell
+    whether real browsers are affected, so animation is off for good rather than guessed at. The explainer's travelling dot
+    covers part of the "Outbox" label for a moment (cosmetic, from task 3). On phones the nav takes two rows. Dark-mode
+    colours were judged from screenshots, not measured for WCAG contrast. Throwaway key `t11-visual` on project `t9-check`
+    left in the local dev DB; an old local API process is still running on port 3000._
 12. **Tests and docs**: extend `smoke-test:remote` to cover `/dashboard` and the new endpoints; README and docs.
 
 **Acceptance criteria**

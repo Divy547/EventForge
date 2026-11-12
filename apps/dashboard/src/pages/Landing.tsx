@@ -1,3 +1,4 @@
+import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { Explainer } from '@/components/landing/Explainer';
 import { FeatureCards } from '@/components/landing/FeatureCards';
 import { LoginForm } from '@/components/landing/LoginForm';
@@ -14,8 +15,9 @@ export function Landing({ onSignedIn, onSandboxStarted }: LandingProps) {
   return (
     <div className="min-h-screen">
       <header className="bg-navy text-navy-foreground">
-        <div className="mx-auto flex max-w-5xl items-center px-4 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <span className="font-heading text-lg font-semibold">EventForge</span>
+          <ThemeToggle />
         </div>
         <div className="mx-auto grid max-w-5xl gap-10 px-4 pt-6 pb-12 lg:grid-cols-[1fr_22rem] lg:items-start">
           <div>
