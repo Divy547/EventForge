@@ -358,8 +358,10 @@ After `publish-images` succeeds on `main`, the `deploy` job in `.github/workflow
 runs `deploy/deploy.sh`, then checks `/v1/ready` on the public URL. The job stays **off until the `DEPLOY_URL`
 repository variable exists**, so nothing here breaks CI before you set it up.
 
-> **Status:** the script was tested locally (healthy deploy, repeat deploy, unhealthy worker, bad image tag, missing
-> env file). The CI job and the key setup below have **not been run yet**; the first push after setup is their test.
+> **Status:** verified end to end on 2026-11-12. The script was tested locally (healthy deploy, repeat deploy,
+> unhealthy worker, bad image tag, missing env file), then the whole path ran in CI: restricted key, pinned host key,
+> deploy over SSH and the `/v1/ready` check. The first CI attempt failed only at the last step, because the
+> `DEPLOY_URL` variable had been saved with a leading space; the guide's table now says to type it exactly.
 
 The deploy key can do exactly one thing. Its `authorized_keys` entry forces `deploy.sh` whatever command is requested
 and `restrict` removes shell, port forwarding and agent access, so a leaked `SSH_KEY` secret can at worst redeploy the
@@ -390,13 +392,13 @@ printf '%s %s\n' 40.81.24.8 "$(ssh -i $KEY $VM 'cat /etc/ssh/ssh_host_ed25519_ke
 
 Then in GitHub, **Settings, Secrets and variables, Actions**:
 
-| Kind     | Name              | Value                                                                                         |
-| :------- | :---------------- | :-------------------------------------------------------------------------------------------- |
-| Secret   | `SSH_HOST`        | `40.81.24.8`                                                                                  |
-| Secret   | `SSH_USER`        | `azureuser`                                                                                   |
-| Secret   | `SSH_KEY`         | The private key file `~/.ssh/eventforge-deploy`, whole, including the BEGIN/END lines         |
-| Secret   | `SSH_KNOWN_HOSTS` | The single line printed by step 5                                                             |
-| Variable | `DEPLOY_URL`      | `https://40-81-24-8.sslip.io` (no trailing slash). **Add this last: it switches the job on.** |
+| Kind     | Name              | Value                                                                                                                            |
+| :------- | :---------------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| Secret   | `SSH_HOST`        | `40.81.24.8`                                                                                                                     |
+| Secret   | `SSH_USER`        | `azureuser`                                                                                                                      |
+| Secret   | `SSH_KEY`         | The private key file `~/.ssh/eventforge-deploy`, whole, including the BEGIN/END lines                                            |
+| Secret   | `SSH_KNOWN_HOSTS` | The single line printed by step 5                                                                                                |
+| Variable | `DEPLOY_URL`      | `https://40-81-24-8.sslip.io` (no trailing slash, **no leading or trailing spaces**). **Add this last: it switches the job on.** |
 
 Paste secrets only into GitHub, never into chat or a commit. The next push to `main` that passes CI deploys; watch the
 **Deploy to Production (SSH)** job. To turn automatic deploys off, delete the `DEPLOY_URL` variable.
@@ -513,16 +515,17 @@ Funnel or a Cloudflare quick tunnel); see [deploy-fallback.md](deploy-fallback.m
 
 ## 10. Troubleshooting
 
-| Symptom                                      | Check                                                                                                         |
-| :------------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
-| `dc pull` says `denied`                      | The GHCR package is private; make it public.                                                                  |
-| `dc up` says `POSTGRES_PASSWORD must be set` | `.env.production` missing, wrong path, or you forgot `--env-file` (use the `dc` alias).                       |
-| `SITE_ADDRESS must be set`                   | Same, for the hostname.                                                                                       |
-| HTTPS fails, HTTP works                      | Certificate not issued yet: `dc logs caddy`; confirm NSG ports 80 and 443.                                    |
-| API container restarts repeatedly            | `dc logs api`. A wrong `DATABASE_URL` or `METRICS_TOKEN` shorter than 16 characters fails validation at boot. |
-| A container is killed or `Exited (137)`      | Out of memory: `docker inspect` shows `OOMKilled`. Raise its limit or resize the VM.                          |
-| Everything is slow after a burst of traffic  | Burstable CPU credits ran out (B-series). It recovers on its own; resize for sustained load tests.            |
-| Sandbox returns 404                          | `SANDBOX_ENABLED` is not `true` in `.env.production`; recreate with `dc up -d --no-build`.                    |
-| Deploy job: `Permission denied (publickey)`  | `SSH_KEY` secret incomplete (needs the BEGIN/END lines) or the public key is missing from `authorized_keys`.  |
-| Deploy job: `Host key verification failed`   | `SSH_KNOWN_HOSTS` does not start with the same address as `SSH_HOST`, or the VM was rebuilt (new host key).   |
-| Deploy job skipped                           | The `DEPLOY_URL` repository variable is not set, or the push was not to `main`.                               |
+| Symptom                                               | Check                                                                                                         |
+| :---------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| `dc pull` says `denied`                               | The GHCR package is private; make it public.                                                                  |
+| `dc up` says `POSTGRES_PASSWORD must be set`          | `.env.production` missing, wrong path, or you forgot `--env-file` (use the `dc` alias).                       |
+| `SITE_ADDRESS must be set`                            | Same, for the hostname.                                                                                       |
+| HTTPS fails, HTTP works                               | Certificate not issued yet: `dc logs caddy`; confirm NSG ports 80 and 443.                                    |
+| API container restarts repeatedly                     | `dc logs api`. A wrong `DATABASE_URL` or `METRICS_TOKEN` shorter than 16 characters fails validation at boot. |
+| A container is killed or `Exited (137)`               | Out of memory: `docker inspect` shows `OOMKilled`. Raise its limit or resize the VM.                          |
+| Everything is slow after a burst of traffic           | Burstable CPU credits ran out (B-series). It recovers on its own; resize for sustained load tests.            |
+| Sandbox returns 404                                   | `SANDBOX_ENABLED` is not `true` in `.env.production`; recreate with `dc up -d --no-build`.                    |
+| Deploy job: `Permission denied (publickey)`           | `SSH_KEY` secret incomplete (needs the BEGIN/END lines) or the public key is missing from `authorized_keys`.  |
+| Deploy job: `Host key verification failed`            | `SSH_KNOWN_HOSTS` does not start with the same address as `SSH_HOST`, or the VM was rebuilt (new host key).   |
+| Deploy job: `curl: (3) URL rejected: Malformed input` | `DEPLOY_URL` has a stray space (the log shows two spaces after `DEPLOY_URL:`); retype the variable.           |
+| Deploy job skipped                                    | The `DEPLOY_URL` repository variable is not set, or the push was not to `main`.                               |
