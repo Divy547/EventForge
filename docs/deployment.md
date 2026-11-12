@@ -26,6 +26,17 @@ docker build -f apps/api/Dockerfile -t eventforge-api:latest .
 docker build -f apps/worker/Dockerfile -t eventforge-worker:latest .
 ```
 
+### Prebuilt Images (GHCR)
+
+On every push to `main`, after all quality gates pass, the `publish-images` job in `.github/workflows/ci.yml` builds both images and publishes them to GitHub Container Registry as `ghcr.io/<owner>/eventforge-api` and `ghcr.io/<owner>/eventforge-worker`, each tagged `latest` and `sha-<short commit>` (`linux/amd64`). `docker-compose.prod.yml` uses these names, so a small host can pull instead of building:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml pull
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build
+```
+
+Set `EVENTFORGE_TAG=sha-<short commit>` in `.env.production` to pin a release or roll back, and `EVENTFORGE_IMAGE_REGISTRY` to use a different registry or owner. The packages must be public for the host to pull them without credentials (GitHub: profile, Packages, the package, Package settings, Change visibility).
+
 ---
 
 ## 2. Production Docker Compose
@@ -34,14 +45,14 @@ A standalone production configuration is provided in `docker-compose.prod.yml`.
 
 ### Services
 
-| Service    | Image                      | Internal Port | Host Port          | Role                                       |
-| :--------- | :------------------------- | :------------ | :----------------- | :----------------------------------------- |
-| `postgres` | `postgres:16-alpine`       | `5432`        | _(None - Private)_ | Transactional event storage & outbox       |
-| `redis`    | `redis:7-alpine`           | `6379`        | _(None - Private)_ | BullMQ delivery queue & retries            |
-| `migrate`  | `eventforge-api:latest`    | _(none)_      | _(None - Private)_ | One-off job: applies DB migrations, exits  |
-| `caddy`    | `caddy:2-alpine`           | `80`, `443`   | `80`, `443`        | Only public entry point; HTTPS + proxy     |
-| `api`      | `eventforge-api:latest`    | `3000`        | `127.0.0.1:3000`   | REST API, dashboard & webhook ingestion    |
-| `worker`   | `eventforge-worker:latest` | `3001`        | _(None - Private)_ | Background outbox poller & HTTP dispatcher |
+| Service    | Image                         | Internal Port | Host Port          | Role                                       |
+| :--------- | :---------------------------- | :------------ | :----------------- | :----------------------------------------- |
+| `postgres` | `postgres:16-alpine`          | `5432`        | _(None - Private)_ | Transactional event storage & outbox       |
+| `redis`    | `redis:7-alpine`              | `6379`        | _(None - Private)_ | BullMQ delivery queue & retries            |
+| `migrate`  | `ghcr.io/…/eventforge-api`    | _(none)_      | _(None - Private)_ | One-off job: applies DB migrations, exits  |
+| `caddy`    | `caddy:2-alpine`              | `80`, `443`   | `80`, `443`        | Only public entry point; HTTPS + proxy     |
+| `api`      | `ghcr.io/…/eventforge-api`    | `3000`        | `127.0.0.1:3000`   | REST API, dashboard & webhook ingestion    |
+| `worker`   | `ghcr.io/…/eventforge-worker` | `3001`        | _(None - Private)_ | Background outbox poller & HTTP dispatcher |
 
 ### Security Boundaries
 
@@ -61,7 +72,8 @@ cp .env.production.example .env.production
 # Edit .env.production: set POSTGRES_PASSWORD and SITE_ADDRESS (your public hostname, or :80 for
 # plain HTTP when testing on your own machine)
 
-# 2. Build and launch services in detached mode
+# 2. Build from source and launch services in detached mode
+#    (on a host that cannot build, use `pull` and `up -d --no-build`; see "Prebuilt Images")
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 
 # 3. View streaming logs

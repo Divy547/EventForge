@@ -7,6 +7,12 @@ x-api-build: &api-build
   context: .
   dockerfile: apps/api/Dockerfile
 
+# Images are published to GHCR by CI (see .github/workflows/ci.yml). Pull and start them with
+# `docker compose pull && docker compose up -d --no-build`; a small host cannot build them.
+# `up -d --build` still builds from source, tagged with these same names. Set EVENTFORGE_TAG to
+# a `sha-<commit>` tag to pin a release or roll back.
+x-api-image: &api-image ${EVENTFORGE_IMAGE_REGISTRY:-ghcr.io/divy547}/eventforge-api:${EVENTFORGE_TAG:-latest}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,7 +54,7 @@ services:
   # starting new code against an old schema.
   migrate:
     build: *api-build
-    image: eventforge-api:latest
+    image: *api-image
     container_name: eventforge-prod-migrate
     restart: 'no'
     command: ['node', 'packages/database/dist/scripts/migrate.js']
@@ -63,7 +69,7 @@ services:
 
   api:
     build: *api-build
-    image: eventforge-api:latest
+    image: *api-image
     container_name: eventforge-prod-api
     restart: unless-stopped
     # Reachable from the host itself only (admin CLI, smoke test); the public entry point is caddy.
@@ -103,7 +109,7 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
-    image: eventforge-worker:latest
+    image: ${EVENTFORGE_IMAGE_REGISTRY:-ghcr.io/divy547}/eventforge-worker:${EVENTFORGE_TAG:-latest}
     container_name: eventforge-prod-worker
     restart: unless-stopped
     # No published ports: the worker's health/metrics server is reachable only on the
