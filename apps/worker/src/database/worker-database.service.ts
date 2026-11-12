@@ -29,6 +29,7 @@ import {
   findStaleDeliveries,
   events,
   subscriptions,
+  deliveries,
   eq,
   and,
   type DatabaseConnection,
@@ -92,6 +93,25 @@ export class WorkerDatabaseService {
     options?: ClaimDeliveryOptions,
   ): Promise<DeliveryRecord | null> {
     return claimDeliveryForProcessing(this.db, deliveryId, options);
+  }
+
+  /** Lightweight pre-claim lookup used to apply per-subscription rate limiting. */
+  async getDeliveryThrottleInfo(deliveryId: string): Promise<{
+    subscriptionId: string;
+    rateLimitPerSecond: number | null;
+    status: string;
+  } | null> {
+    const [row] = await this.db
+      .select({
+        subscriptionId: deliveries.subscriptionId,
+        rateLimitPerSecond: subscriptions.rateLimitPerSecond,
+        status: deliveries.status,
+      })
+      .from(deliveries)
+      .innerJoin(subscriptions, eq(deliveries.subscriptionId, subscriptions.id))
+      .where(eq(deliveries.id, deliveryId))
+      .limit(1);
+    return row ?? null;
   }
 
   async getDeliveryContext(deliveryId: string): Promise<DeliveryContext | null> {

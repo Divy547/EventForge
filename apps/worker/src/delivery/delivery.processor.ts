@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { Worker, Job, Queue } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -11,11 +12,14 @@ import { WorkerDatabaseService } from '../database/worker-database.service.js';
 import { DELIVERY_QUEUE, REDIS_CLIENT } from '../redis/redis.provider.js';
 import { WorkerConfigService } from '../config/worker-config.service.js';
 import { HttpDispatcherService, WebhookDispatchError } from './http-dispatcher.service.js';
+import { SubscriptionThrottleService } from './subscription-throttle.service.js';
 
 export interface WebhookJobData {
   deliveryId: string;
   traceparent?: string | undefined;
   tracestate?: string | undefined;
+  /** Set on jobs re-enqueued by the subscription throttle: a slot is already reserved. */
+  throttleReserved?: boolean | undefined;
 }
 
 const inFlightDeliveriesGauge = defaultMetricsRegistry.registerGauge(
@@ -27,6 +31,11 @@ const deliveryAttemptsTotal = defaultMetricsRegistry.registerCounter(
   'eventforge_delivery_attempts_total',
   'Total number of webhook HTTP delivery attempts dispatched to external endpoints',
   ['status_code_class', 'error_code'],
+);
+
+const deliveriesThrottledTotal = defaultMetricsRegistry.registerCounter(
+  'eventforge_deliveries_throttled_total',
+  'Total number of deliveries deferred to a later slot by per-subscription rate limiting',
 );
 
 const deliveriesSuccessTotal = defaultMetricsRegistry.registerCounter(
@@ -69,16 +78,18 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
     @Inject(DELIVERY_QUEUE) private readonly deliveryQueue: Queue,
     private readonly configService: WorkerConfigService,
     private readonly httpDispatcher: HttpDispatcherService,
+    private readonly subscriptionThrottle: SubscriptionThrottleService,
   ) {}
 
   onModuleInit(): void {
     this.worker = new Worker<WebhookJobData>(
       WEBHOOK_DELIVERY_QUEUE,
       async (job: Job<WebhookJobData>) => {
-        await this.processDelivery(job.data.deliveryId, {
-          traceparent: job.data.traceparent,
-          tracestate: job.data.tracestate,
-        });
+        await this.processDelivery(
+          job.data.deliveryId,
+          { traceparent: job.data.traceparent, tracestate: job.data.tracestate },
+          { throttleReserved: job.data.throttleReserved === true },
+        );
       },
       {
         connection: this.redisClient,
@@ -110,7 +121,29 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
   async processDelivery(
     deliveryId: string,
     traceContext?: { traceparent?: string | undefined; tracestate?: string | undefined },
+    options?: { throttleReserved?: boolean },
   ): Promise<void> {
+    // 0. Per-subscription rate limit (rateLimitPerSecond). Done before claiming so a throttled
+    //    job leaves delivery state untouched: it is simply re-enqueued for its reserved slot.
+    if (!options?.throttleReserved) {
+      const deferMs = await this.reserveThrottleSlot(deliveryId);
+      if (deferMs > 0) {
+        await this.deliveryQueue.add(
+          'deliver',
+          {
+            deliveryId,
+            traceparent: traceContext?.traceparent,
+            tracestate: traceContext?.tracestate,
+            throttleReserved: true,
+          } satisfies WebhookJobData,
+          { delay: deferMs, jobId: `delivery-${deliveryId}-slot-${randomUUID()}` },
+        );
+        deliveriesThrottledTotal.inc();
+        this.logger.debug(`Delivery ${deliveryId} throttled; deferred ${deferMs}ms to its slot`);
+        return;
+      }
+    }
+
     // 1. Atomically claim delivery in DB (moves status to IN_FLIGHT, enforcing backoff and max attempts)
     const claimedDelivery = await this.dbService.claimDeliveryForProcessing(deliveryId, {
       leaseTimeoutSeconds: this.configService.deliveryLeaseTimeoutSeconds,
@@ -230,6 +263,23 @@ export class DeliveryProcessor implements OnModuleInit, OnApplicationShutdown {
     } finally {
       inFlightDeliveriesGauge.dec();
     }
+  }
+
+  /**
+   * Returns how long to defer this delivery to respect its subscription's rateLimitPerSecond
+   * (0 = dispatch now). Terminal deliveries are not charged: the claim step will reject them.
+   */
+  private async reserveThrottleSlot(deliveryId: string): Promise<number> {
+    const info = await this.dbService.getDeliveryThrottleInfo(deliveryId);
+    if (
+      !info ||
+      !info.rateLimitPerSecond ||
+      info.status === 'COMPLETED' ||
+      info.status === 'DEAD_LETTER'
+    ) {
+      return 0;
+    }
+    return this.subscriptionThrottle.reserveSlot(info.subscriptionId, info.rateLimitPerSecond);
   }
 
   /**

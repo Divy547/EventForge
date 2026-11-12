@@ -3,6 +3,7 @@ import type { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { DeliveryProcessor } from '../src/delivery/delivery.processor.js';
 import { WorkerConfigService } from '../src/config/worker-config.service.js';
+import { SubscriptionThrottleService } from '../src/delivery/subscription-throttle.service.js';
 import { WorkerDatabaseService } from '../src/database/worker-database.service.js';
 import {
   HttpDispatcherService,
@@ -15,6 +16,7 @@ describe('DeliveryProcessor', () => {
   let mockQueue: { [K in keyof Queue]?: jest.Mock<any> };
   let mockRedis: { [K in keyof Redis]?: jest.Mock<any> };
   let mockConfig: Partial<WorkerConfigService>;
+  let mockThrottle: { [K in keyof SubscriptionThrottleService]?: jest.Mock<any> };
   let mockDispatcher: { [K in keyof HttpDispatcherService]?: jest.Mock<any> };
 
   const fakeDelivery = {
@@ -76,7 +78,10 @@ describe('DeliveryProcessor', () => {
       recordSuccessfulDelivery: jest.fn<any>(),
       recordFailedDelivery: jest.fn<any>(),
       recordDeliveryAborted: jest.fn<any>(),
+      getDeliveryThrottleInfo: jest.fn<any>().mockResolvedValue(null),
     };
+
+    mockThrottle = { reserveSlot: jest.fn<any>().mockResolvedValue(0) };
 
     mockDispatcher = {
       dispatch: jest.fn<any>(),
@@ -88,7 +93,61 @@ describe('DeliveryProcessor', () => {
       mockQueue as unknown as Queue,
       mockConfig as WorkerConfigService,
       mockDispatcher as unknown as HttpDispatcherService,
+      mockThrottle as unknown as SubscriptionThrottleService,
     );
+  });
+
+  describe('per-subscription rate limiting', () => {
+    it('defers the job to its reserved slot without claiming the delivery', async () => {
+      mockDbService.getDeliveryThrottleInfo!.mockResolvedValue({
+        subscriptionId: 'sub-1',
+        rateLimitPerSecond: 2,
+        status: 'PENDING',
+      });
+      mockThrottle.reserveSlot!.mockResolvedValue(750);
+
+      await processor.processDelivery('del-1', { traceparent: 'tp' });
+
+      expect(mockThrottle.reserveSlot).toHaveBeenCalledWith('sub-1', 2);
+      expect(mockDbService.claimDeliveryForProcessing).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        'deliver',
+        expect.objectContaining({ deliveryId: 'del-1', traceparent: 'tp', throttleReserved: true }),
+        expect.objectContaining({ delay: 750 }),
+      );
+    });
+
+    it('does not reserve again for a job that already holds a slot', async () => {
+      mockDbService.claimDeliveryForProcessing!.mockResolvedValue(null);
+
+      await processor.processDelivery('del-1', undefined, { throttleReserved: true });
+
+      expect(mockDbService.getDeliveryThrottleInfo).not.toHaveBeenCalled();
+      expect(mockThrottle.reserveSlot).not.toHaveBeenCalled();
+      expect(mockDbService.claimDeliveryForProcessing).toHaveBeenCalled();
+    });
+
+    it('does not throttle subscriptions without a limit or already-terminal deliveries', async () => {
+      mockDbService.claimDeliveryForProcessing!.mockResolvedValue(null);
+
+      mockDbService.getDeliveryThrottleInfo!.mockResolvedValue({
+        subscriptionId: 'sub-1',
+        rateLimitPerSecond: null,
+        status: 'PENDING',
+      });
+      await processor.processDelivery('del-1');
+
+      mockDbService.getDeliveryThrottleInfo!.mockResolvedValue({
+        subscriptionId: 'sub-1',
+        rateLimitPerSecond: 5,
+        status: 'COMPLETED',
+      });
+      await processor.processDelivery('del-1');
+
+      expect(mockThrottle.reserveSlot).not.toHaveBeenCalled();
+      expect(mockQueue.add).not.toHaveBeenCalled();
+    });
   });
 
   it('skips processing if delivery cannot be claimed', async () => {

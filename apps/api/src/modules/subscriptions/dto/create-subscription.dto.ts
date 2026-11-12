@@ -43,7 +43,8 @@ export class CreateSubscriptionDto {
 
   @ApiPropertyOptional({
     example: 50,
-    description: 'Optional egress rate limit (requests per second)',
+    description:
+      'Optional cap on webhook deliveries per second to this endpoint (burst up to the same value). Excess deliveries are delayed, not dropped.',
   })
   @IsOptional()
   @IsInt()
