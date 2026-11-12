@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 in progress)_
+_Last updated: 2026-11-12 (Phase 3 in progress; CI green after worker image fix)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -9,7 +9,8 @@ This document tracks the work needed to take EventForge from a working codebase 
 deployed, portfolio-ready project. Each phase begins only after explicit approval.
 
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **in progress**:
-the Azure VM exists and accepts SSH; Caddy and the GHCR image pipeline are committed; the first real deploy is next.
+the Azure VM exists and accepts SSH; Caddy and the GHCR image pipeline are committed, pushed and CI is green (including
+`publish-images`); memory limits for the 1 GiB VM are next.
 
 ---
 
@@ -121,21 +122,21 @@ key lives only in `~/.ssh` and is never committed or shared.
 
 **Tasks**
 
-| #   | Task                                                                                                                                                                                                                                                                  | Status            |
-| :-- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------- |
-| 1   | **Caddy** in `docker-compose.prod.yml` as the only public entry point (80/443, automatic certificate), API bound to `127.0.0.1`, `TRUST_PROXY_HOPS=1`. Tested locally behind Caddy: `smoke-test:remote` 28/28; a forged `X-Forwarded-For` is ignored.                 | ✅ `6947ff2`      |
-| 2   | **Prebuilt images:** CI `publish-images` job pushes API and worker images to GHCR on `main`; compose pulls them (`pull` then `up -d --no-build`). Replaces the old "arm64 builds" task: the VM is x64.                                                                | ✅ `a895809`      |
-| 3   | **Memory limits for 1 GiB:** measure idle and light-load memory of each service, then set per-service limits and any Postgres/Node tuning needed so one service cannot starve the rest.                                                                               | ⏳ Next           |
-| 4   | **`docs/deploy-azure-student.md`:** VM and NSG recap, 2 GB swap, Docker install, `.env.production` (generate secrets on the VM), first deploy, seeding the demo project and sandbox, backups, stopping/deallocating the VM to save credit, checking remaining credit. | ⏳ Not started    |
-| 5   | **First deploy and verification** on the VM against every acceptance criterion below (needs the commits pushed, CI green, and both GHCR packages public).                                                                                                             | ⏳ Not started    |
-| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends.                                                                                                                                          | ⏳ Not started    |
-| 7   | **Optional CD:** after a green CI run on `main`, a workflow deploys to the VM over SSH (`pull` + `up -d --no-build`). Only after the manual deploy works.                                                                                                             | ⏳ Optional, last |
-| 8   | **Plan and docs wording:** archive the Phase 3 details, refresh baselines, and correct any docs that still mention Oracle or arm64.                                                                                                                                   | ⏳ End of phase   |
+| #   | Task                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status                  |
+| :-- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------- |
+| 1   | **Caddy** in `docker-compose.prod.yml` as the only public entry point (80/443, automatic certificate), API bound to `127.0.0.1`, `TRUST_PROXY_HOPS=1`. Tested locally behind Caddy: `smoke-test:remote` 28/28; a forged `X-Forwarded-For` is ignored.                                                                                                                                                                                  | ✅ `6947ff2`            |
+| 2   | **Prebuilt images:** CI `publish-images` job pushes API and worker images to GHCR on `main`; compose pulls them (`pull` then `up -d --no-build`). Replaces the old "arm64 builds" task: the VM is x64. The first CI run failed because the worker image copied `packages/sdk/dist`, which the worker never builds (masked locally by a stale `dist` that `.dockerignore` did not exclude); fixed in `3777291`, CI green on 2026-11-12. | ✅ `a895809`, `3777291` |
+| 3   | **Memory limits for 1 GiB:** measure idle and light-load memory of each service, then set per-service limits and any Postgres/Node tuning needed so one service cannot starve the rest.                                                                                                                                                                                                                                                | ⏳ Next                 |
+| 4   | **`docs/deploy-azure-student.md`:** VM and NSG recap, 2 GB swap, Docker install, `.env.production` (generate secrets on the VM), first deploy, seeding the demo project and sandbox, backups, stopping/deallocating the VM to save credit, checking remaining credit.                                                                                                                                                                  | ⏳ Not started          |
+| 5   | **First deploy and verification** on the VM against every acceptance criterion below (needs the commits pushed, CI green, and both GHCR packages public).                                                                                                                                                                                                                                                                              | ⏳ Not started          |
+| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends.                                                                                                                                                                                                                                                                                                           | ⏳ Not started          |
+| 7   | **Optional CD:** after a green CI run on `main`, a workflow deploys to the VM over SSH (`pull` + `up -d --no-build`). Only after the manual deploy works.                                                                                                                                                                                                                                                                              | ⏳ Optional, last       |
+| 8   | **Plan and docs wording:** archive the Phase 3 details, refresh baselines, and correct any docs that still mention Oracle or arm64.                                                                                                                                                                                                                                                                                                    | ⏳ End of phase         |
 
 **What you need to do (user steps)**
 
-1. **Push** the Phase 3 commits to `main` on GitHub and wait for CI to go green (this first run publishes the images).
-2. **Make both GHCR packages public** if they are private: GitHub profile, Packages, `eventforge-api` and
+1. ~~**Push** the Phase 3 commits to `main` and wait for CI to go green.~~ Done (2026-11-12); the green run published the images.
+2. ~~**Make both GHCR packages public**~~ Done (2026-11-12). Path, for reference: GitHub profile, Packages, `eventforge-api` and
    `eventforge-worker`, Package settings, Change visibility. Otherwise the VM cannot pull them.
 3. **At first deploy** (task 5), on the VM: clone the repo (or copy `docker-compose.prod.yml` and `deploy/`), create
    `.env.production` with generated secrets (`openssl rand -hex 24`), and run the compose commands from the guide. Never
