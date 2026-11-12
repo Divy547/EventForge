@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 nearly complete; only the credit burn rate remains, CI is green after the flaky-test fix)_
+_Last updated: 2026-11-12 (Phase 3 nearly complete; only the credit burn rate remains; CI is green after the flaky-test fix)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -11,7 +11,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **nearly complete**:
 the stack is live at `https://40-81-24-8.sslip.io`, the fallback doc is written, automatic deploys from CI work, the
 Phase 3 details are archived (task 8), and CI is green after the flaky-test fix (run `43285625950`). **Remaining:** record
-the credit burn rate (waits on Azure Cost Management data) and refresh the section 3 baselines.
+the credit burn rate (waits on Azure Cost Management data).
 
 ---
 
@@ -47,16 +47,17 @@ the credit burn rate (waits on Azure Cost Management data) and refresh the secti
 | Subscription rate limit         | **Enforce** `rateLimitPerSecond` in the worker (decided during Phase 1) rather than removing the field.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Prod smoke test                 | **HTTP-only** `pnpm smoke-test:remote` for prod-configured stacks (decided during Phase 1). Delivery stays covered by `pnpm smoke-test`.                                                                                                                                                                                                                                                                                                                                                                            |
 
-## 3. Baseline after Phase 2 (2026-11-12)
+## 3. Baseline after Phase 3 (2026-11-12)
 
-| Check                                     | Result                                                                                            |
-| :---------------------------------------- | :------------------------------------------------------------------------------------------------ |
-| `pnpm typecheck`, `lint`, `format:check`  | ✅ Clean                                                                                          |
-| `pnpm test:unit`                          | ✅ 200/200 (API 74, worker 31, dashboard 95)                                                      |
-| `pnpm test:integration` (real PG + Redis) | ✅ 91/91 (API 76, worker 15)                                                                      |
-| `pnpm smoke-test:remote`                  | ✅ 25/25 on the built API (dev config; `/metrics` check expected to fail without `METRICS_TOKEN`) |
+| Check                                     | Result                                                                         |
+| :---------------------------------------- | :----------------------------------------------------------------------------- |
+| `pnpm typecheck`, `lint`, `format:check`  | ✅ Clean                                                                       |
+| `pnpm test:unit`                          | ✅ 200/200 (API 74, worker 31, dashboard 95)                                   |
+| `pnpm test:integration` (real PG + Redis) | ✅ 91/91 (API 76, worker 15)                                                   |
+| `pnpm smoke-test:remote`                  | ✅ 28/28 against the public URL `https://40-81-24-8.sslip.io` (Phase 3 task 5) |
 
-The Phase 1 baseline is in `docs/plan-archive.md`.
+Gates re-run on 2026-11-12 after Phase 3 (typecheck was served from the Turbo cache; the unit and integration suites were
+forced to run); the counts are unchanged from Phase 2. The Phase 1 baseline is in `docs/plan-archive.md`.
 
 ## 4. Phases
 
@@ -140,7 +141,7 @@ stops newer pushes from cancelling runs on `main`.
       50% and 80%) and no payment method is attached.
 - [x] **Flaky-test fix seen green in CI** (run `43285625950`, 2026-11-12, with `--concurrency=1`). One green run, so it is
       evidence rather than proof; the failure appeared in 4 of 12 local runs before the fix.
-- [ ] **Baselines not refreshed.** Section 3 still shows the Phase 2 numbers; the gates were not re-run in task 8.
+- [x] **Baselines refreshed** (section 3): all gates clean, 200 unit and 91 integration tests passing.
 
 **Notes that still matter**
 
