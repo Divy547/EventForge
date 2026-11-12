@@ -162,10 +162,14 @@ const { rawKey, keyHash, keyPrefix } = generateApiKey('live');
 ### Webhook Signing Secrets
 
 Webhook endpoints are signed using HMAC-SHA256 with secrets formatted as `whsec_<32_random_bytes_hex>`.
-To rotate an endpoint signing secret:
+The secret is returned once, when the subscription is created, and is never returned by any read or update
+endpoint. A subscription's secret cannot be changed, so to rotate it:
 
-1. Update the subscription in EventForge with a newly generated secret.
-2. In the downstream consumer, configure the `@eventforge/sdk` to verify signatures against both the new secret and old secret during the migration window.
+1. Create a new subscription for the same target URL and event types; save the `signingSecret` from its response.
+2. In the downstream consumer, configure the `@eventforge/sdk` to verify signatures against both the new and the old
+   secret during the migration window.
+3. Once the consumer is verified, disable the old subscription (`PATCH /v1/subscriptions/:id` with `{ "isActive": false }`)
+   or delete it. Deleting also removes that subscription's delivery history.
 
 ---
 

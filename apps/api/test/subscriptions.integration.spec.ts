@@ -196,6 +196,7 @@ describe('Subscriptions API Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Updated Orders Webhook');
       expect(res.body.rateLimitPerSecond).toBe(100);
+      expect(res.body.signingSecret).toBeUndefined();
     });
 
     it('Project B should receive 404 when attempting to delete Project A subscription', async () => {

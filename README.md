@@ -243,6 +243,10 @@ Response: `HTTP 201 Created`
 }
 ```
 
+The `signingSecret` is returned **only in this creation response**. Save it now: `GET /v1/subscriptions`,
+`GET /v1/subscriptions/:id` and `PATCH /v1/subscriptions/:id` never return it, and it cannot be changed or
+retrieved afterwards (to get a new one, create a new subscription).
+
 ### 3. Inspect & Replay Dead-Letter Deliveries
 
 ```bash
