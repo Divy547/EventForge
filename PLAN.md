@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 in progress; first deploy live and verified, fallback doc next)_
+_Last updated: 2026-11-12 (Phase 3 in progress; first deploy live and verified, fallback doc done)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -11,7 +11,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **in progress**:
 the Azure VM exists and accepts SSH; Caddy and the GHCR image pipeline are committed, pushed and CI is green (including
 `publish-images`); memory limits for the 1 GiB VM are committed (`45db147`); the deployment guide is committed (`9dbc416`, corrected in `023edc7`); the **first deploy is live** at
-`https://40-81-24-8.sslip.io` and verified (task 5), apart from recording the credit burn rate; the fallback doc (task 6) is next.
+`https://40-81-24-8.sslip.io` and verified (task 5), apart from recording the credit burn rate; the fallback doc (task 6) is committed (`6965f8e`). Task 7 (optional CD) and task 8 (wording) remain.
 
 ---
 
@@ -130,7 +130,7 @@ key lives only in `~/.ssh` and is never committed or shared.
 | 3   | **Memory limits for 1 GiB:** per-service `mem_limit`s (api 224m, worker 192m, postgres 160m, redis 48m, caddy 48m; all env-overridable), V8 heap caps below them, Postgres tuned (`shared_buffers=24MB`, `max_connections=40`), Redis `maxmemory 32mb` with `noeviction`, DB pools 10 each. Measured locally: idle ~455 MiB unlimited; with limits, `smoke-test:remote` 28/28 and 600 events at concurrency 20 peak at ~200 MiB total, no OOM kills. Real 1 GiB check happens in task 5. | ✅ `45db147`            |
 | 4   | **`docs/deploy-azure-student.md`:** VM and NSG recap, 2 GB swap, Docker install, `.env.production` (generate secrets on the VM), first deploy, seeding the demo project and sandbox, backups, stopping/deallocating the VM to save credit, checking remaining credit.                                                                                                                                                                                                                    | ✅ `9dbc416`            |
 | 5   | **First deploy and verification** on the VM against every acceptance criterion below (needs the commits pushed, CI green, and both GHCR packages public). Done 2026-11-12: `smoke-test:remote` 28/28 against the public URL, only ports 22/80/443 open, ~213 MiB used with no OOM kills, reboot recovery. Open: the credit burn rate.                                                                                                                                                    | ⏳ Next                 |
-| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends.                                                                                                                                                                                                                                                                                                                                                             | ⏳ Next                 |
+| 6   | **Fallback doc:** run locally and expose with Tailscale Funnel or a Cloudflare quick tunnel, for when the Azure credit ends. `docs/deploy-fallback.md`: the local stack was verified (`smoke-test:remote` 28/28 on plain HTTP); the tunnel commands were not run. Notes that all visitors share one client IP behind a tunnel, so the sandbox's per-IP limits need raising.                                                                                                              | ✅ `6965f8e`            |
 | 7   | **Optional CD:** after a green CI run on `main`, a workflow deploys to the VM over SSH (`pull` + `up -d --no-build`). Only after the manual deploy works.                                                                                                                                                                                                                                                                                                                                | ⏳ Optional, last       |
 | 8   | **Plan and docs wording:** archive the Phase 3 details, refresh baselines, and correct any docs that still mention Oracle or arm64.                                                                                                                                                                                                                                                                                                                                                      | ⏳ End of phase         |
 
