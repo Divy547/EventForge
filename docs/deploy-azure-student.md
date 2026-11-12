@@ -438,7 +438,7 @@ exhaust the burstable CPU credits, and resize back afterwards.
 ### When the credit ends
 
 The VM stops and nothing is charged. The demo then lives on the fallback path (run locally and expose it with Tailscale
-Funnel or a Cloudflare quick tunnel); see the fallback guide once it exists, and keep a recorded demo in the README.
+Funnel or a Cloudflare quick tunnel); see [deploy-fallback.md](deploy-fallback.md), and keep a recorded demo in the README.
 
 ---
 
