@@ -1,6 +1,6 @@
 # EventForge — Completion & Deployment Plan
 
-_Last updated: 2026-11-12 (Phase 3 nearly complete; only the credit burn rate remains, plus a green CI run for the flaky-test fix)_
+_Last updated: 2026-11-12 (Phase 3 nearly complete; only the credit burn rate remains, CI is green after the flaky-test fix)_
 
 **Completed-phase details (Phase 1 and 2):** `docs/plan-archive.md`
 **Dashboard design:** `docs/dashboard-design.md` (Phase 2 reference)
@@ -9,9 +9,9 @@ This document tracks the work needed to take EventForge from a working codebase 
 deployed, portfolio-ready project. Each phase begins only after explicit approval.
 
 **Status:** Phases 1 and 2 are **complete and committed** (2026-11-12). Phase 3 (free deployment) is **nearly complete**:
-the stack is live at `https://40-81-24-8.sslip.io`, the fallback doc is written, automatic deploys from CI work, and the
-Phase 3 details are archived (task 8). **Remaining:** record the credit burn rate (waits on Azure Cost Management data) and
-see the flaky-test fix (`fcbc8df`) pass in CI.
+the stack is live at `https://40-81-24-8.sslip.io`, the fallback doc is written, automatic deploys from CI work, the
+Phase 3 details are archived (task 8), and CI is green after the flaky-test fix (run `43285625950`). **Remaining:** record
+the credit burn rate (waits on Azure Cost Management data) and refresh the section 3 baselines.
 
 ---
 
@@ -128,7 +128,7 @@ The Phase 1 baseline is in `docs/plan-archive.md`.
 | 5    | `023edc7`                       | First deploy and verification: `smoke-test:remote` 28/28, reboot recovery              |
 | 6    | `6965f8e`                       | `docs/deploy-fallback.md` (local stack behind Tailscale Funnel or a Cloudflare tunnel) |
 | 7    | `2dd61f1`, `1a74ebf`, `838568c` | Automatic deploys over SSH after green CI (verified in CI run `43280734434`)           |
-| 8    | this commit                     | Phase 3 details moved to the archive; no Oracle or arm64 mentions remain in the docs   |
+| 8    | `c56df4f`                       | Phase 3 details moved to the archive; no Oracle or arm64 mentions remain in the docs   |
 
 Also: `fcbc8df` runs package test suites one at a time (a flaky API test shared a database with the worker); `1a74ebf`
 stops newer pushes from cancelling runs on `main`.
@@ -138,8 +138,8 @@ stops newer pushes from cancelling runs on `main`.
 - [ ] **Credit burn rate and expected end date** recorded in `docs/deploy-azure-student.md` (waits on the first Azure Cost
       Management data). This is the only unchecked Phase 3 acceptance criterion. A budget alert exists (8,500 INR, alerts at
       50% and 80%) and no payment method is attached.
-- [ ] **Flaky-test fix seen green in CI.** The commits after `2b49e82` (`37c8d91`, `fcbc8df`, `b1dab8b` and this one) are
-      not pushed yet; pushing redeploys the server because CD is on.
+- [x] **Flaky-test fix seen green in CI** (run `43285625950`, 2026-11-12, with `--concurrency=1`). One green run, so it is
+      evidence rather than proof; the failure appeared in 4 of 12 local runs before the fix.
 - [ ] **Baselines not refreshed.** Section 3 still shows the Phase 2 numbers; the gates were not re-run in task 8.
 
 **Notes that still matter**
