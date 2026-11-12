@@ -205,7 +205,7 @@ This lets a receiver join the caller's trace. EventForge only carries the `trace
 
 - **Rate limiting** (`RateLimitGuard`): fixed-window counters in Redis (`INCR` + `PEXPIRE`), so limits are shared across API replicas. Two buckets are checked on every request, _before_ authentication: per client IP (`RATE_LIMIT_IP_MAX`, which also throttles guessing of invalid API keys) and, when a key is presented, per API key (`RATE_LIMIT_KEY_MAX`, keyed by the SHA-256 of the key so raw keys never reach Redis). Defaults: 1,200 / 2,400 requests per 60 s window. Exceeding either returns `429` with a `Retry-After` header. If Redis is unavailable the limiter fails open and logs a warning.
 - **Client IP behind a proxy**: set `TRUST_PROXY_HOPS` to the number of reverse proxies in front of the API; otherwise every request appears to come from the proxy.
-- **Security headers**: `helmet` defaults on every response (a relaxed CSP is applied only to the `/docs` Swagger UI); `X-Powered-By` is disabled.
+- **Security headers**: `helmet` defaults on every response, with two exceptions: the Swagger UI at `/docs` has its Content-Security-Policy turned off (it needs inline scripts), and `/dashboard` gets its own same-origin policy (inline styles allowed, because Radix UI and Recharts inject them). `X-Powered-By` is disabled.
 - **CORS**: explicit allow-list via `CORS_ALLOWED_ORIGINS` (comma-separated). Default is empty: browsers on other origins receive no CORS headers. Non-browser clients (no `Origin` header) are unaffected.
 - **`/metrics`**: when `METRICS_TOKEN` is set it requires `Authorization: Bearer <token>`. When unset it is open outside production and returns `404` in production. The worker's metrics server is not published by the production compose file.
 
@@ -224,7 +224,7 @@ Limitation: a large backlog for a slow subscription is held as delayed BullMQ jo
 
 The worker runs a retention job every `RETENTION_INTERVAL_MS` (default hourly). `RETENTION_DAYS` (default 30; `0` disables) sets the window.
 
-- Deletes `COMPLETED` deliveries whose `completed_at` is older than the window; their `delivery_attempts` cascade.
+- Deletes `COMPLETED` deliveries whose `completed_at` (or `updated_at`, if that was never set) is older than the window; their `delivery_attempts` cascade.
 - Deletes events older than the window **only if** no deliveries remain for them and their outbox record is `PROCESSED` (or absent); outbox rows cascade with the event.
 - **Never deletes** `PENDING`, `IN_FLIGHT`, `FAILED` or `DEAD_LETTER` deliveries, their attempt history, or events not yet fanned out, however old, so unfinished work and replayable dead letters are preserved.
 - Deletes run in batches of `RETENTION_BATCH_SIZE` using `FOR UPDATE SKIP LOCKED`, so replicas and live processing do not block each other. Deleted counts are exported as `eventforge_retention_deleted_total{table}`.

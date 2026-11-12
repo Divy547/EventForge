@@ -142,7 +142,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec -T pos
 Restore from a custom-format dump using `pg_restore`:
 
 ```bash
-# 1. Drop existing connections and restore
+# 1. Restore (--clean drops existing objects first; the user and database names below are the
+#    defaults of POSTGRES_USER and POSTGRES_DB)
 docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U postgres -d eventforge --clean --if-exists < eventforge_backup_YYYYMMDD_HHMMSS.dump
 
@@ -156,15 +157,16 @@ pnpm --filter @eventforge/database db:verify
 
 ### API Key Generation
 
-Tenant API keys use the format `ef_<env>_<32_random_bytes_base64url>`.
-Only SHA-256 hashes (`keyHash`) and prefixes (`keyPrefix`) are stored in PostgreSQL. Raw keys are never stored and cannot be recovered if lost.
+Tenant API keys look like `ef_live_<24 random bytes, base64url>`.
+Only the SHA-256 hash (`hashed_key`) and a short display prefix (`key_prefix`) are stored in PostgreSQL. Raw keys are never stored and cannot be recovered if lost.
 
 ```typescript
 import { generateApiKey } from '@eventforge/common';
 
-const { rawKey, keyHash, keyPrefix } = generateApiKey('live');
+const { rawKey, hashedKey, keyPrefix } = generateApiKey(); // the prefix defaults to 'ef_live'
 // Share rawKey once with the tenant.
-// Store keyHash and keyPrefix in the api_keys table.
+// Store hashedKey and keyPrefix in the api_keys table.
+// In practice, use the admin CLI (below), which does this for you.
 ```
 
 ### Rotation Workflow
@@ -184,7 +186,7 @@ cannot tolerate a short outage, by creating a second key with `key:create`, swit
 
 ### Webhook Signing Secrets
 
-Webhook endpoints are signed using HMAC-SHA256 with secrets formatted as `whsec_<32_random_bytes_hex>`.
+Webhook endpoints are signed using HMAC-SHA256 with secrets formatted as `whsec_<24 random bytes, base64url>`.
 The secret is returned once, when the subscription is created, and is never returned by any read or update
 endpoint. A subscription's secret cannot be changed, so to rotate it:
 
@@ -205,7 +207,7 @@ endpoint. A subscription's secret cannot be changed, so to rotate it:
 
 ### Prometheus Metrics
 
-Both runtimes expose Prometheus metrics at `/v1/metrics`. The API endpoint requires the `METRICS_TOKEN` bearer token in production; the worker endpoint is reachable only from inside the Docker network (it is not published):
+Both runtimes expose Prometheus metrics at `/v1/metrics` (also `/metrics`). The API endpoint requires the `METRICS_TOKEN` bearer token in production; the worker endpoint is reachable only from inside the Docker network (it is not published). The lists below are the metrics most useful for operations; the full set, with labels, is in [observability.md](observability.md):
 
 - **API Metrics** (`:3000/v1/metrics`):
   - `eventforge_http_requests_total`
@@ -238,7 +240,7 @@ If `eventforge_outbox_pending_gauge` increases monotonically:
 
 ### Dead-Letter Queue Triage
 
-Deliveries transitioning to `DEAD_LETTER` indicate repeated failures (e.g., downstream consumer returned 5xx or timed out across all 5 retry attempts).
+Deliveries transitioning to `DEAD_LETTER` indicate repeated failures (e.g., downstream consumer returned 5xx or timed out across all 5 attempts, which at the default backoff is about 15 seconds).
 
 1. Query DLQ deliveries via API:
    ```bash
