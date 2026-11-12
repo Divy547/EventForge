@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phase 1 is **implemented and committed** (2026-11-12). Phase 2 is **approved and in
 progress**: task 1 (backend endpoints) is committed as `fc7dd20`; task 2 (dashboard scaffold) is committed as `43bff6a`;
-task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. **Task 8 is next, awaiting approval.**
+task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `53a4f79`. **Task 9 is next, awaiting approval.**
 
 ---
 
@@ -77,7 +77,7 @@ task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) 
 
 ### Phase 2 — Dashboard
 
-**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; tasks 8–12 have not been started.
+**Status: 🚧 In progress (approved 2026-11-12).** Tasks 1–6 are committed; task 7 is committed as `2ba6648`; task 8 is committed as `53a4f79`; tasks 9–12 have not been started.
 
 **Existing API surface** (checked 2026-11-12): events (`POST`, `GET` list with `page`/`limit`, `GET :id`),
 deliveries (`GET` list, `GET :id` which already includes the attempts list, single and batch DLQ replay),
@@ -149,6 +149,17 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
    subscription with a new secret", which the API cannot do (rotation is now: create a new subscription, verify both,
    disable the old one)._
 8. **Subscriptions page**: create, edit, enable/disable; signing secret shown once on creation (see decision 3).
+   _Done (`53a4f79`): `/subscriptions` lists name, target URL, event types, rate limit and
+   status, with a header link. "New subscription" opens a form (name, target URL, event types separated by commas
+   or `*`, optional rate limit); the signing secret from the creation response appears once in a copy-to-clipboard
+   notice and is gone after "I have saved it" (nothing stores it). Edit sends only the changed fields; Enable/Disable
+   is a `PATCH` of `isActive`. API refusals (SSRF, validation) are shown using the API's own `detail`/`errors`.
+   New `fetchSubscriptions`, `createSubscription`, `updateSubscription` in `lib/api.ts`. 64 dashboard tests (14 new).
+   Checked against a real local API (create, SSRF 400, validation 400, disable, list); that check caught that error
+   bodies are RFC 7807 (`detail`, `errors`), not `message`, which the first version assumed.
+   Notes: delete is **not** in the task list, so there is no delete button (the API supports it). The API cannot
+   clear a rate limit once set, so the edit form can change it but not remove it. Custom `headers` are not editable in
+   the UI (API-only). Throwaway project `t8-check` left in the local dev DB._
 9. **Dead-letter queue page**: single and batch replay.
 10. **Sandbox mode**: "Send test event"; built-in demo receiver (always succeed, fail N times then succeed,
     always `500`, slow/timeout); restricted to a dedicated demo project; rate limited. Needs a narrow SSRF

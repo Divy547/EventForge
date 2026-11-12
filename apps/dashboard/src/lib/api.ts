@@ -54,6 +54,13 @@ export type ApiFailure =
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; reason: ApiFailure };
 
+function failureForStatus(status: number): ApiFailure {
+  if (status === 401) return 'unauthorized';
+  if (status === 404) return 'not-found';
+  if (status === 429) return 'rate-limited';
+  return 'unexpected';
+}
+
 /** One place that maps transport and HTTP problems onto the failures the pages know how to show. */
 async function getJson<T>(path: string, key: string, signal?: AbortSignal): Promise<ApiResult<T>> {
   let response: Response;
@@ -62,10 +69,52 @@ async function getJson<T>(path: string, key: string, signal?: AbortSignal): Prom
   } catch {
     return { ok: false, reason: 'unreachable' };
   }
-  if (response.status === 401) return { ok: false, reason: 'unauthorized' };
-  if (response.status === 404) return { ok: false, reason: 'not-found' };
-  if (response.status === 429) return { ok: false, reason: 'rate-limited' };
-  if (!response.ok) return { ok: false, reason: 'unexpected' };
+  if (!response.ok) return { ok: false, reason: failureForStatus(response.status) };
+  try {
+    return { ok: true, data: (await response.json()) as T };
+  } catch {
+    return { ok: false, reason: 'unexpected' };
+  }
+}
+
+/** A write the API refused with 400: `message` is its own explanation (validation, SSRF, ...). */
+export type MutationResult<T> = ApiResult<T> | { ok: false; reason: 'rejected'; message: string };
+
+/**
+ * The API answers a 400 as RFC 7807 problem details: `detail` is a sentence (the SSRF reason, or a
+ * generic "validation failed") and `errors` lists the specific field problems when there are any.
+ */
+async function readRejection(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown; errors?: unknown };
+    if (Array.isArray(body.errors) && body.errors.length > 0) return body.errors.join('; ');
+    if (typeof body.detail === 'string' && body.detail) return body.detail;
+  } catch {
+    // Fall through to the generic wording.
+  }
+  return 'The API rejected these values.';
+}
+
+async function sendJson<T>(
+  method: 'POST' | 'PATCH',
+  path: string,
+  key: string,
+  body: unknown,
+): Promise<MutationResult<T>> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, reason: 'unreachable' };
+  }
+  if (response.status === 400) {
+    return { ok: false, reason: 'rejected', message: await readRejection(response) };
+  }
+  if (!response.ok) return { ok: false, reason: failureForStatus(response.status) };
   try {
     return { ok: true, data: (await response.json()) as T };
   } catch {
@@ -224,6 +273,58 @@ export function fetchDelivery(
   signal?: AbortSignal,
 ): Promise<ApiResult<DeliveryDetail>> {
   return getJson<DeliveryDetail>(`/v1/deliveries/${encodeURIComponent(id)}`, key, signal);
+}
+
+/** Mirrors `SubscriptionResponseDto`. The signing secret is never part of a read. */
+export interface Subscription {
+  id: string;
+  projectId: string;
+  name: string;
+  targetUrl: string;
+  eventTypes: string[];
+  isActive: boolean;
+  rateLimitPerSecond: number | null;
+  headers: Record<string, string> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Mirrors `CreatedSubscriptionResponseDto`: the only response that carries the secret. */
+export interface CreatedSubscription extends Subscription {
+  signingSecret: string;
+}
+
+/** Mirrors `CreateSubscriptionDto`. */
+export interface SubscriptionInput {
+  name: string;
+  targetUrl: string;
+  eventTypes: string[];
+  rateLimitPerSecond?: number;
+}
+
+/** Mirrors `UpdateSubscriptionDto`. The API cannot clear a rate limit once set, only change it. */
+export type SubscriptionPatch = Partial<SubscriptionInput> & { isActive?: boolean };
+
+export function fetchSubscriptions(
+  key: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<Subscription[]>> {
+  return getJson<Subscription[]>('/v1/subscriptions', key, signal);
+}
+
+export function createSubscription(
+  key: string,
+  input: SubscriptionInput,
+): Promise<MutationResult<CreatedSubscription>> {
+  return sendJson<CreatedSubscription>('POST', '/v1/subscriptions', key, input);
+}
+
+export function updateSubscription(
+  key: string,
+  id: string,
+  patch: SubscriptionPatch,
+): Promise<MutationResult<Subscription>> {
+  return sendJson<Subscription>('PATCH', `/v1/subscriptions/${encodeURIComponent(id)}`, key, patch);
 }
 
 /** Visitor-facing wording for every failure a page can hit. */

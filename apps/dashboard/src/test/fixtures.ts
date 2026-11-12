@@ -171,3 +171,22 @@ export const deliveryDetailFixture: DeliveryDetail = {
     },
   ],
 };
+
+import type { Subscription } from '@/lib/api';
+
+export const subscriptionFixture: Subscription = {
+  id: 'sssssss1-1111-4222-8333-444444444444',
+  projectId: 'p1',
+  name: 'Billing hook',
+  targetUrl: 'https://hooks.example.com/in',
+  eventTypes: ['order.created', 'payment.succeeded'],
+  isActive: true,
+  rateLimitPerSecond: 50,
+  headers: null,
+  createdAt: '2026-11-12T10:00:00.000Z',
+  updatedAt: '2026-11-12T10:00:00.000Z',
+};
+
+export function subscriptionsResponse(data: Subscription[] = [subscriptionFixture]): Response {
+  return new Response(JSON.stringify(data), { status: 200 });
+}

@@ -6,6 +6,7 @@ import { Deliveries } from '@/pages/Deliveries';
 import { EventDetail } from '@/pages/EventDetail';
 import { Events } from '@/pages/Events';
 import { Overview } from '@/pages/Overview';
+import { Subscriptions } from '@/pages/Subscriptions';
 import { clearApiKey, loadApiKey, saveApiKey } from '@/lib/session';
 
 export function App() {
@@ -39,6 +40,10 @@ export function App() {
       <Route
         path="/deliveries/:id"
         element={<DeliveryDetail apiKey={apiKey} onSignOut={signOut} />}
+      />
+      <Route
+        path="/subscriptions"
+        element={<Subscriptions apiKey={apiKey} onSignOut={signOut} />}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
