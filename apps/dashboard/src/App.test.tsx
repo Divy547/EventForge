@@ -132,3 +132,60 @@ describe('Landing and login', () => {
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
   });
 });
+
+describe('Try the live sandbox', () => {
+  const sessionResponse = () =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({ apiKey: 'ef_live_sandbox', expiresAt: '2026-11-12T13:00:00Z' }),
+        {
+          status: 201,
+        },
+      ),
+    );
+
+  it('starts a session without asking for a key and lands on the sandbox page', async () => {
+    const fetchMock = vi.fn().mockImplementation(sessionResponse);
+    vi.stubGlobal('fetch', fetchMock);
+    renderAt(<App />);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Try the live sandbox' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sandbox' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/sandbox/session',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(screen.getByTestId('location')).toHaveTextContent('/sandbox');
+    expect(window.sessionStorage.getItem('eventforge.apiKey')).toBe('ef_live_sandbox');
+    expect(screen.getByRole('link', { name: 'Sandbox' })).toBeInTheDocument();
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('does not show the Sandbox link to a visitor who signed in with their own key', async () => {
+    mockFetch(200);
+    renderAt(<App />);
+    await submitKey('ef_live_abc');
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sandbox' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [404, 'not available on this server'],
+    [429, 'Too many sandbox sessions'],
+    [500, 'unexpected error'],
+  ])('explains a %i from the API', async (status, text) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status })));
+    renderAt(<App />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Try the live sandbox' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(text);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('says so when the API cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('down')));
+    renderAt(<App />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Try the live sandbox' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach the API');
+  });
+});

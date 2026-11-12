@@ -66,6 +66,14 @@ export class WorkerConfigService {
   }
 
   /**
+   * Base URL of the API's built-in sandbox receiver (e.g. http://api:3000/sandbox/receiver), or
+   * undefined when sandbox mode is off. Deliveries to exactly these URLs skip SSRF blocking.
+   */
+  get sandboxReceiverUrl(): string | undefined {
+    return this.config.SANDBOX_ENABLED ? this.config.SANDBOX_RECEIVER_URL : undefined;
+  }
+
+  /**
    * Lease timeout for in-flight deliveries. Always guaranteed to exceed WEBHOOK_TIMEOUT_MS by at least 30s.
    */
   get deliveryLeaseTimeoutMs(): number {

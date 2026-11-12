@@ -1,13 +1,16 @@
 import { Explainer } from '@/components/landing/Explainer';
 import { FeatureCards } from '@/components/landing/FeatureCards';
 import { LoginForm } from '@/components/landing/LoginForm';
+import { SandboxButton } from '@/components/landing/SandboxButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface LandingProps {
   onSignedIn: (apiKey: string) => void;
+  /** Called with the key of a freshly started sandbox session. */
+  onSandboxStarted: (apiKey: string) => void;
 }
 
-export function Landing({ onSignedIn }: LandingProps) {
+export function Landing({ onSignedIn, onSandboxStarted }: LandingProps) {
   return (
     <div className="min-h-screen">
       <header className="bg-navy text-navy-foreground">
@@ -21,6 +24,7 @@ export function Landing({ onSignedIn }: LandingProps) {
               EventForge takes your events, delivers them to every subscribed endpoint, retries what
               fails, and keeps a dead-letter queue for what cannot be delivered.
             </p>
+            <SandboxButton onStarted={(session) => onSandboxStarted(session.apiKey)} />
           </div>
           <Card className="text-card-foreground">
             <CardHeader>

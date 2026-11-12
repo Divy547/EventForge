@@ -7,8 +7,10 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { RedisModule } from './modules/redis/redis.module.js';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
 import { StatsModule } from './modules/stats/stats.module.js';
+import { SandboxModule } from './modules/sandbox/sandbox.module.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { ApiKeyGuard } from './common/guards/api-key.guard.js';
+import { SandboxQuotaGuard } from './common/guards/sandbox-quota.guard.js';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware.js';
@@ -22,6 +24,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     SubscriptionsModule,
     DeliveriesModule,
     StatsModule,
+    SandboxModule,
   ],
   providers: [
     // Order matters: rate limiting runs before authentication so invalid-key guessing is throttled.
@@ -32,6 +35,11 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     {
       provide: APP_GUARD,
       useClass: ApiKeyGuard,
+    },
+    // After ApiKeyGuard: it needs the authenticated project to apply sandbox restrictions.
+    {
+      provide: APP_GUARD,
+      useClass: SandboxQuotaGuard,
     },
     {
       provide: APP_INTERCEPTOR,

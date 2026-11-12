@@ -62,8 +62,38 @@ export const envSchema = z
       .union([z.boolean(), z.string()])
       .optional()
       .transform((val) => Boolean(val === true || val === 'true' || val === '1')),
+
+    // Sandbox mode (public demo). The receiver base is the address the WORKER uses to reach the
+    // API's built-in demo receiver, e.g. http://api:3000/sandbox/receiver. Only that address is
+    // exempt from SSRF blocking. The API reads SANDBOX_ENABLED too; the worker only needs the URL.
+    SANDBOX_ENABLED: z
+      .union([z.boolean(), z.string()])
+      .optional()
+      .transform((val) => Boolean(val === true || val === 'true' || val === '1')),
+    SANDBOX_RECEIVER_URL: z.preprocess(
+      (val) => (val === '' ? undefined : val),
+      z.string().url('SANDBOX_RECEIVER_URL must be a valid http(s) URL').optional(),
+    ),
+    // Per client IP and hour: visitor sessions that may be started, and writes (events, replays,
+    // subscriptions) a sandbox key may make.
+    SANDBOX_SESSIONS_PER_HOUR: z.coerce.number().int().positive().default(10),
+    SANDBOX_WRITES_PER_HOUR: z.coerce.number().int().positive().default(60),
   })
   .superRefine((data, ctx) => {
+    if (data.SANDBOX_ENABLED && !data.SANDBOX_RECEIVER_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'SANDBOX_RECEIVER_URL is required when SANDBOX_ENABLED is true',
+        path: ['SANDBOX_RECEIVER_URL'],
+      });
+    }
+    if (data.SANDBOX_RECEIVER_URL && !/^https?:\/\//i.test(data.SANDBOX_RECEIVER_URL)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'SANDBOX_RECEIVER_URL must use http or https',
+        path: ['SANDBOX_RECEIVER_URL'],
+      });
+    }
     if (data.NODE_ENV === 'production') {
       if (data.ALLOW_LOCAL_WEBHOOKS) {
         ctx.addIssue({

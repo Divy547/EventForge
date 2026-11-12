@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router';
 import { Button } from '@/components/ui/button';
+import { isSandboxSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
 interface AppHeaderProps {
@@ -14,15 +15,18 @@ const NAV = [
   { to: '/subscriptions', label: 'Subscriptions', end: false },
 ];
 
+const SANDBOX_NAV = { to: '/sandbox', label: 'Sandbox', end: false };
+
 /** Dark navy chrome shared by every signed-in page. */
 export function AppHeader({ onSignOut }: AppHeaderProps) {
+  const nav = isSandboxSession() ? [...NAV, SANDBOX_NAV] : NAV;
   return (
     <header className="bg-navy text-navy-foreground">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-6">
           <span className="font-heading text-lg font-semibold">EventForge</span>
           <nav aria-label="Main" className="flex gap-1">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

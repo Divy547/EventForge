@@ -7,6 +7,7 @@ import {
   signWebhookPayload,
   truncateAndRedact,
   isPrivateIp,
+  isSandboxReceiverUrl,
   CLOUD_METADATA_HOSTS,
 } from '@eventforge/common';
 import { WorkerConfigService } from '../config/worker-config.service.js';
@@ -54,7 +55,11 @@ export class HttpDispatcherService {
    */
   async dispatch(input: DispatchWebhookInput): Promise<DispatchWebhookResult> {
     const startTime = Date.now();
-    const allowLocal = this.configService.allowLocalWebhooks;
+    // The sandbox receiver sits on a private address by design. Only the exact receiver URLs
+    // get this exemption (see isSandboxReceiverUrl); every other target is still SSRF-checked.
+    const allowLocal =
+      this.configService.allowLocalWebhooks ||
+      isSandboxReceiverUrl(input.targetUrl, this.configService.sandboxReceiverUrl);
     const timeoutMs = input.timeoutMs ?? this.configService.webhookTimeoutMs;
 
     let parsedUrl: URL;
@@ -147,23 +152,31 @@ export class HttpDispatcherService {
         resolve(result);
       };
 
+      // Node 20+ may ask for every address (`all: true`, happy eyeballs) and then expects an
+      // array in the callback. Validate each address, whichever shape was requested.
       const customLookup = (
         host: string,
         opts: dns.LookupOptions,
-        callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+        callback: (
+          err: NodeJS.ErrnoException | null,
+          address: string | dns.LookupAddress[],
+          family?: number,
+        ) => void,
       ) => {
         dns.lookup(host, opts, (err, address, family) => {
           if (err) {
             return callback(err, address as string, family);
           }
-          if (!allowLocal && isPrivateIp(address as string)) {
+          const addresses = Array.isArray(address) ? address.map((a) => a.address) : [address];
+          const blocked = allowLocal ? undefined : addresses.find((a) => isPrivateIp(a));
+          if (blocked !== undefined) {
             return callback(
-              new Error(`SSRF blocked: IP address ${address} is private or restricted`),
+              new Error(`SSRF blocked: IP address ${blocked} is private or restricted`),
               '',
               family,
             );
           }
-          callback(null, address as string, family);
+          callback(null, address, family);
         });
       };
 

@@ -10,7 +10,7 @@ deployed, portfolio-ready project. Each phase begins only after explicit approva
 
 **Status:** Phase 1 is **implemented and committed** (2026-11-12). Phase 2 is **approved and in
 progress**: task 1 (backend endpoints) is committed as `fc7dd20`; task 2 (dashboard scaffold) is committed as `43bff6a`;
-task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. **Task 10 is next, awaiting approval.**
+task 3 (login / landing page) is committed as `e82fa8c`; task 4 (Overview page) is committed as `61402a4` (see Phase 2). task 5 (Events pages) is committed as `3e92e81`. Task 6 (Deliveries pages) is committed as `26ef76e`. Task 7 is committed as `2ba6648`. Task 8 (Subscriptions page) is committed as `00b4d3b`. Task 9 (Dead-letter queue page) is committed as `450a0d8`. Task 10 (Sandbox mode) is implemented and **awaiting review, not committed**. Task 11 is next, awaiting approval.
 
 ---
 
@@ -177,6 +177,30 @@ subscriptions (full CRUD). **Missing for the dashboard:** a stats summary, and d
 10. **Sandbox mode**: "Send test event"; built-in demo receiver (always succeed, fail N times then succeed,
     always `500`, slow/timeout); restricted to a dedicated demo project; rate limited. Needs a narrow SSRF
     exception for the demo receiver's own address only.
+    _Done (uncommitted, awaiting review): off by default (`SANDBOX_ENABLED`, `SANDBOX_RECEIVER_URL`; env examples and
+    `docker-compose.prod.yml` updated). **API** (`modules/sandbox`): public `POST /v1/sandbox/session` mints a 1-hour key
+    for the one shared `sandbox` project (created on demand with one canonical subscription per scenario; expired keys
+    are purged on each session); `POST /v1/sandbox/events {scenario}` ingests `sandbox.<scenario>`; the receiver is
+    `POST /sandbox/receiver/{succeed|flaky|fail|slow}` (public, but answers 404 unless `X-EventForge-Delivery-Id` is a
+    delivery of the sandbox project; flaky = 503 twice then 200, counted per delivery in Redis; fail = 500; slow = holds
+    the connection until the worker times out, 60 s cap). `SandboxQuotaGuard` (after `ApiKeyGuard`): a sandbox key
+    cannot create, change or delete subscriptions (403, so it cannot point the worker at an external URL) and its other
+    writes (events, replays) are limited per IP and hour; sessions are limited too (defaults 10 and 60 per hour).
+    **SSRF**: `isSandboxReceiverUrl` (packages/common) accepts only `<receiver base>/<known scenario>` with the same
+    protocol, host and port, no query, fragment or credentials, compared after URL normalisation (dot segments cannot
+    climb out); only those URLs skip the worker's private-address checks. **Also fixed**: the worker's DNS `lookup` hook
+    broke on Node 24 (the address arrives as an array, so every hostname delivery failed with `SSRF_BLOCKED
+[object Object]`, including public hosts); it now checks each address. **Dashboard**: "Try the live sandbox" on the
+    landing page (no key needed), a `/sandbox` page (header link only in a sandbox session) with the four scenarios and a
+    live status line per sent event (polls every 1.5 s until COMPLETED or DEAD_LETTER), linking to the event, delivery
+    and dead-letter page for replay. Tests: API 150 (17 new integration, 20 unit), worker 46 (4 new), dashboard 87 (12
+    new). Checked on a real API and worker (ports 3100/3101): succeed -> COMPLETED (1 attempt), flaky -> COMPLETED (3),
+    fail -> DEAD_LETTER (5), slow -> DEAD_LETTER (5 timeouts), replay of the dead letter -> 200 and a fresh attempt,
+    subscription write with a sandbox key -> 403.
+    Notes: every visitor shares one project, so visitors see each other's events (a per-visitor project would need
+    cleanup). The `slow` scenario assumes `WEBHOOK_TIMEOUT_MS` is below 60 s. The receiver does not verify the HMAC
+    signature. Throwaway `sandbox` project and a few events left in the local dev DB._
+
 11. **Responsive and theming pass**: phone width, light and dark mode (shadcn CSS variables), and a check of
     every animation against reduced motion. See `docs/dashboard-design.md`.
 12. **Tests and docs**: extend `smoke-test:remote` to cover `/dashboard` and the new endpoints; README and docs.

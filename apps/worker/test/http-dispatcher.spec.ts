@@ -47,10 +47,11 @@ describe('HttpDispatcherService', () => {
     });
   });
 
-  const createDispatcher = (allowLocal: boolean, timeoutMs = 2000) => {
+  const createDispatcher = (allowLocal: boolean, timeoutMs = 2000, sandboxReceiverUrl?: string) => {
     const mockConfig = {
       allowLocalWebhooks: allowLocal,
       webhookTimeoutMs: timeoutMs,
+      sandboxReceiverUrl,
     } as unknown as WorkerConfigService;
 
     return new HttpDispatcherService(mockConfig);
@@ -112,6 +113,75 @@ describe('HttpDispatcherService', () => {
         eventId: 'evt-2',
       }),
     ).rejects.toThrow(WebhookDispatchError);
+  });
+
+  describe('sandbox receiver exemption', () => {
+    const dispatch = (dispatcher: HttpDispatcherService, targetUrl: string) =>
+      dispatcher.dispatch({
+        targetUrl,
+        payloadString: '{}',
+        signingSecret: 'sec',
+        deliveryId: 'del-sb',
+        eventId: 'evt-sb',
+      });
+
+    it('reaches the private receiver address, by IP and by host name, when local webhooks are off', async () => {
+      const port = new URL(serverUrl).port;
+      responseStatusCode = 200;
+      for (const host of ['127.0.0.1', 'localhost']) {
+        const base = `http://${host}:${port}/sandbox/receiver`;
+        const dispatcher = createDispatcher(false, 2000, base);
+        const result = await dispatch(dispatcher, `${base}/succeed`);
+        expect(result.statusCode).toBe(200);
+      }
+    });
+
+    it('still blocks every other private target', async () => {
+      const port = new URL(serverUrl).port;
+      const base = `http://127.0.0.1:${port}/sandbox/receiver`;
+      const dispatcher = createDispatcher(false, 2000, base);
+      const blocked = [
+        `http://127.0.0.1:${port}/other`, // same host, outside the receiver path
+        `http://127.0.0.1:${port}/sandbox/receiver/unknown`,
+        `http://127.0.0.1:${port}/sandbox/receiver/succeed?x=1`,
+        `http://127.0.0.1:${Number(port) + 1}/sandbox/receiver/succeed`, // another port
+        `http://127.0.0.1:${port}/sandbox/receiver/../../v1/events`,
+        'http://169.254.169.254/latest/meta-data',
+      ];
+      for (const url of blocked) {
+        await expect(dispatch(dispatcher, url)).rejects.toMatchObject({
+          errorCode: expect.stringMatching(/SSRF_BLOCKED|ECONNREFUSED/),
+        });
+      }
+      // Nothing above may have reached the mock server on the wrong path.
+      await expect(dispatch(dispatcher, `http://127.0.0.1:${port}/other`)).rejects.toMatchObject({
+        errorCode: 'SSRF_BLOCKED',
+      });
+    });
+
+    it('has no effect when no receiver is configured', async () => {
+      const port = new URL(serverUrl).port;
+      const dispatcher = createDispatcher(false, 2000, undefined);
+      await expect(
+        dispatch(dispatcher, `http://127.0.0.1:${port}/sandbox/receiver/succeed`),
+      ).rejects.toMatchObject({ errorCode: 'SSRF_BLOCKED' });
+    });
+  });
+
+  it('blocks a host name that resolves to a loopback address', async () => {
+    // `localhost` is not blocked by name when local webhooks are off, so this proves the DNS
+    // lookup hook itself refuses the loopback address it resolves to.
+    const dispatcher = createDispatcher(false);
+    const port = new URL(serverUrl).port;
+    await expect(
+      dispatcher.dispatch({
+        targetUrl: `http://localhost.:${port}/hook`,
+        payloadString: '{}',
+        signingSecret: 'sec',
+        deliveryId: 'del-dns',
+        eventId: 'evt-dns',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'SSRF_BLOCKED' });
   });
 
   it('handles 4xx client errors by throwing WebhookDispatchError with status and snippet', async () => {

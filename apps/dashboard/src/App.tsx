@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useNavigate } from 'react-router';
 import { Landing } from '@/pages/Landing';
 import { DeliveryDetail } from '@/pages/DeliveryDetail';
 import { DeadLetters } from '@/pages/DeadLetters';
@@ -7,13 +7,15 @@ import { Deliveries } from '@/pages/Deliveries';
 import { EventDetail } from '@/pages/EventDetail';
 import { Events } from '@/pages/Events';
 import { Overview } from '@/pages/Overview';
+import { Sandbox } from '@/pages/Sandbox';
 import { Subscriptions } from '@/pages/Subscriptions';
-import { clearApiKey, loadApiKey, saveApiKey } from '@/lib/session';
+import { clearApiKey, loadApiKey, saveApiKey, saveSandboxFlag } from '@/lib/session';
 
 export function App() {
   // The key is validated by the login form before it gets here, so a stored key is trusted for
   // this tab; the API still rejects it on every request if it has since been revoked.
   const [apiKey, setApiKey] = useState<string | null>(() => loadApiKey());
+  const navigate = useNavigate();
 
   // Stable identity: Overview refetches when its callbacks change.
   const signOut = useCallback(() => {
@@ -26,7 +28,14 @@ export function App() {
       <Landing
         onSignedIn={(key) => {
           saveApiKey(key);
+          saveSandboxFlag(false);
           setApiKey(key);
+        }}
+        onSandboxStarted={(key) => {
+          saveApiKey(key);
+          saveSandboxFlag(true);
+          setApiKey(key);
+          navigate('/sandbox');
         }}
       />
     );
@@ -47,6 +56,7 @@ export function App() {
         path="/subscriptions"
         element={<Subscriptions apiKey={apiKey} onSignOut={signOut} />}
       />
+      <Route path="/sandbox" element={<Sandbox apiKey={apiKey} onSignOut={signOut} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

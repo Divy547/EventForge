@@ -365,3 +365,47 @@ export const FAILURE_MESSAGES: Record<ApiFailure, string> = {
   unreachable: 'Could not reach the API. Check your connection and refresh.',
   unexpected: 'The API returned an unexpected response. Try again shortly.',
 };
+
+/** Mirrors `SandboxSessionResponseDto`. */
+export interface SandboxSession {
+  apiKey: string;
+  expiresAt: string;
+}
+
+export type SandboxStart =
+  | { ok: true; session: SandboxSession }
+  | { ok: false; reason: 'disabled' | 'rate-limited' | 'unreachable' | 'unexpected' };
+
+/** Asks the API for a short-lived key to the shared sandbox project. Needs no credentials. */
+export async function startSandboxSession(signal?: AbortSignal): Promise<SandboxStart> {
+  let response: Response;
+  try {
+    response = await fetch('/v1/sandbox/session', { method: 'POST', signal: signal ?? null });
+  } catch {
+    return { ok: false, reason: 'unreachable' };
+  }
+  if (response.status === 404) return { ok: false, reason: 'disabled' };
+  if (response.status === 429) return { ok: false, reason: 'rate-limited' };
+  if (!response.ok) return { ok: false, reason: 'unexpected' };
+  try {
+    return { ok: true, session: (await response.json()) as SandboxSession };
+  } catch {
+    return { ok: false, reason: 'unexpected' };
+  }
+}
+
+export type SandboxScenario = 'succeed' | 'flaky' | 'fail' | 'slow';
+
+/** Mirrors `SendSandboxEventResponseDto`. */
+export interface SandboxSend {
+  eventId: string;
+  scenario: SandboxScenario;
+  eventType: string;
+}
+
+export function sendSandboxEvent(
+  key: string,
+  scenario: SandboxScenario,
+): Promise<MutationResult<SandboxSend>> {
+  return sendJson<SandboxSend>('POST', '/v1/sandbox/events', key, { scenario });
+}
