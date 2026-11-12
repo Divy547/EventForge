@@ -9,12 +9,15 @@ import {
   type Database,
   type EventRecord,
   events,
+  deliveries,
+  subscriptions,
   insertEventWithOutbox,
   sql,
   eq,
   and,
   gte,
   lte,
+  asc,
 } from '@eventforge/database';
 import { defaultMetricsRegistry } from '@eventforge/common';
 import { DATABASE } from '../database/database.provider.js';
@@ -23,6 +26,7 @@ import type { ListEventsQueryDto } from './dto/list-events-query.dto.js';
 import type {
   IngestEventResponseDto,
   EventDetailResponseDto,
+  EventWithDeliveriesResponseDto,
   PaginatedEventsResponseDto,
 } from './dto/event-response.dto.js';
 
@@ -106,9 +110,10 @@ export class EventsService {
   }
 
   /**
-   * Retrieves an event by ID strictly scoped to the authenticated project.
+   * Retrieves an event by ID strictly scoped to the authenticated project, together with the
+   * delivery created for each matching subscription.
    */
-  async getEventById(projectId: string, eventId: string): Promise<EventDetailResponseDto> {
+  async getEventById(projectId: string, eventId: string): Promise<EventWithDeliveriesResponseDto> {
     const records = await this.db
       .select()
       .from(events)
@@ -120,6 +125,24 @@ export class EventsService {
       throw new NotFoundException(`Event with identifier '${eventId}' not found`);
     }
 
+    const deliveryRows = await this.db
+      .select({
+        id: deliveries.id,
+        subscriptionId: deliveries.subscriptionId,
+        subscriptionName: subscriptions.name,
+        status: deliveries.status,
+        attemptsCount: deliveries.attemptsCount,
+        maxAttempts: deliveries.maxAttempts,
+        nextRetryAt: deliveries.nextRetryAt,
+        completedAt: deliveries.completedAt,
+        createdAt: deliveries.createdAt,
+        updatedAt: deliveries.updatedAt,
+      })
+      .from(deliveries)
+      .innerJoin(subscriptions, eq(subscriptions.id, deliveries.subscriptionId))
+      .where(and(eq(deliveries.eventId, event.id), eq(deliveries.projectId, projectId)))
+      .orderBy(asc(deliveries.createdAt), asc(deliveries.id));
+
     return {
       id: event.id,
       projectId: event.projectId,
@@ -129,6 +152,18 @@ export class EventsService {
       payload: event.payload as Record<string, unknown>,
       metadata: event.metadata as Record<string, unknown>,
       createdAt: event.createdAt.toISOString(),
+      deliveries: deliveryRows.map((d) => ({
+        id: d.id,
+        subscriptionId: d.subscriptionId,
+        subscriptionName: d.subscriptionName,
+        status: d.status,
+        attemptsCount: d.attemptsCount,
+        maxAttempts: d.maxAttempts,
+        nextRetryAt: d.nextRetryAt?.toISOString() ?? null,
+        completedAt: d.completedAt?.toISOString() ?? null,
+        createdAt: d.createdAt.toISOString(),
+        updatedAt: d.updatedAt.toISOString(),
+      })),
     };
   }
 

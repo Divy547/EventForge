@@ -6,6 +6,7 @@ import { EventsModule } from './modules/events/events.module.js';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
 import { RedisModule } from './modules/redis/redis.module.js';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
+import { StatsModule } from './modules/stats/stats.module.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { ApiKeyGuard } from './common/guards/api-key.guard.js';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
@@ -20,6 +21,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     EventsModule,
     SubscriptionsModule,
     DeliveriesModule,
+    StatsModule,
   ],
   providers: [
     // Order matters: rate limiting runs before authentication so invalid-key guessing is throttled.

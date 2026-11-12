@@ -46,6 +46,43 @@ export class EventDetailResponseDto {
   createdAt!: string;
 }
 
+export class EventDeliverySummaryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  subscriptionId!: string;
+
+  @ApiProperty()
+  subscriptionName!: string;
+
+  @ApiProperty()
+  status!: string;
+
+  @ApiProperty()
+  attemptsCount!: number;
+
+  @ApiProperty()
+  maxAttempts!: number;
+
+  @ApiProperty({ nullable: true })
+  nextRetryAt!: string | null;
+
+  @ApiProperty({ nullable: true })
+  completedAt!: string | null;
+
+  @ApiProperty()
+  createdAt!: string;
+
+  @ApiProperty()
+  updatedAt!: string;
+}
+
+export class EventWithDeliveriesResponseDto extends EventDetailResponseDto {
+  @ApiProperty({ type: [EventDeliverySummaryDto] })
+  deliveries!: EventDeliverySummaryDto[];
+}
+
 export class PaginatedEventsResponseDto {
   @ApiProperty({ type: [EventDetailResponseDto] })
   data!: EventDetailResponseDto[];

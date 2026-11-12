@@ -17,7 +17,7 @@ import { IngestEventDto } from './dto/ingest-event.dto.js';
 import { ListEventsQueryDto } from './dto/list-events-query.dto.js';
 import {
   IngestEventResponseDto,
-  EventDetailResponseDto,
+  EventWithDeliveriesResponseDto,
   PaginatedEventsResponseDto,
 } from './dto/event-response.dto.js';
 import { CurrentProject } from '../../common/decorators/current-project.decorator.js';
@@ -56,19 +56,22 @@ export class EventsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Retrieve event by ID' })
+  @ApiOperation({
+    summary: 'Retrieve event by ID',
+    description: 'Returns the event together with one summary row per subscription delivery.',
+  })
   @ApiParam({ name: 'id', description: 'Event UUID' })
   @ApiResponse({
     status: 200,
-    description: 'Event details',
-    type: EventDetailResponseDto,
+    description: 'Event details with its deliveries',
+    type: EventWithDeliveriesResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Event not found' })
   @ApiResponse({ status: 401, description: 'Invalid or missing API key' })
   async getEventById(
     @CurrentProject() project: AuthenticatedProject,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<EventDetailResponseDto> {
+  ): Promise<EventWithDeliveriesResponseDto> {
     return this.eventsService.getEventById(project.id, id);
   }
 
